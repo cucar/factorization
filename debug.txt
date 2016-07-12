@@ -1,0 +1,242 @@
+y1 = x2'
+y2 = x2'
+y3 = x2'
+x1 = x2
+x3 = x2
+
+x = 0101
+y = 0011
+
+x1 = 0
+y1 = 1
+
+x2 = 1
+y2 = 0
+
+x3 = 0
+y3 = 0
+
+x0 = 1
+y0 = 1
+y1 = x1'
+y2 = x2'
+y3 = (x1' and x2' and x3')
+x1  and x2 and x3' = 0
+x1' and x2 and x3  = 0
+x2' and x3 = 0
+
+x3 = 1 => x2 = 1, x1 = 1, x0 = 1, y3 = 0, y2 = 0, y1 = 0 	=> x = 15, y = 1
+x3 = 0 => x1 and x2 = 0, y3 = x1'x2'				
+	x2 = 1 => x1 = 0, y3 = 0, y1 = 1, y2 = 0		=> x = 5, y = 3
+	x2 = 0 => y3 = x1'
+		x1 = 0 => y3 = 1, y1 = 1, y2 = 1		=> x = 1, y = 15
+		x1 = 1 => y3 = 0, y2 = 1, y1 = 0		=> x = 3, y = 5
+
+
+Product equation 4: 0 = (x2 and x1 and x3') or (x1' and x2' and x3)
+if (x3 = 0) => (x2 and x1) = 0
+if (x3 = 1) => (x1' and x2') = 0
+x3 = (x2 and x1) or (x1) or (x2) 
+
+
+Product equation 4: 0 = (x2 and x1 and x3') or (x1' and x2' and x3)
+
+x1x2x3' = 0
+x1'x2'x3 = 0
+
+x1x2(1 - x3) + x1'x2'x3 = 0
+x1x2 - x1x2x3 + (1 - x1)(1 - x2)x3 = 0
+x1x2 - x1x2x3 + (1 - x1 - x2 + x1x2)x3 = 0
+x1x2 + x3(1 - x1 - x2) = 0
+
+x3(x1 + x2 - 1) = x1x2 (mod 2)
+
+ab = c (mod 2) => a = ?
+
+a = 0, b = 0, c = 0 => ok
+a = 0, b = 0, c = 1 => not possible
+a = 0, b = 1, c = 0 => ok
+a = 0, b = 1, c = 1 => not possible 
+
+a = 1, b = 0, c = 0 => ok
+a = 1, b = 0, c = 1 => not possible
+a = 1, b = 1, c = 0 => not possible
+a = 1, b = 1, c = 1 => ok
+
+
+
+
+(x2 * x1 * (x3 + 1)) + (x1 + 1)(x2 + 1)(x3)
+
+x1x2x3 + x1x2x3 + x1x2 + x1x3 + x2x3 + x3 mod 2 = 0
+x1x2 + x1x3 + x2x3 + x3 mod 2 = 0 
+
+x3(x1 + x2 + 1) + x1x2 mod 2 = 0 
+
+x1x2
+
+
+if (x3 = 0) => (x2 and x1) = 0
+if (x3 = 1) => (x1' and x2') = 0
+x3 = (x2 and x1)
+x3 = (x1) or (x2)
+Executing recursive deduction.
+0 = (x2' and x1) or (x1' and x2)
+Deduced: x1 = x2
+
+
+
+Working on product digit 0
+Product sum 0: ((x0 and y0))
+Calculating product equation 0
+Product equation 0: 1 = (x0 and y0)
+Deduced: x0 = 1
+Deductions: 
+Deduced: y0 = 1
+Applying deduction to previous one: x0 = 1
+Deductions: 
+x0 = 1
+Working on product digit 1
+Product sum 1: ((x0 and y1)) + ((x1 and y0))
+Calculating product equation 1
+Product equation 1: 1 = (x1' and y1) or (y1' and x1)
+Deduced: y1 = x1'
+Applying deduction to previous one: x0 = 1
+Applying deduction to previous one: y0 = 1
+Deductions: 
+x0 = 1
+y0 = 1
+Working on product digit 2
+Calculating carry over 2
+Taking div 2 of ((y1)) + ((x1))
+Carry over 2: ()
+Product sum 2: ((x0 and y2)) + ((x1 and y1)) + ((x2 and y0)) + ()
+Calculating product equation 2
+Product equation 2: 1 = (x2' and y2) or (y2' and x2)
+Deduced: y2 = x2'
+Applying deduction to previous one: x0 = 1
+Applying deduction to previous one: y0 = 1
+Applying deduction to previous one: y1 = x1'
+Applying boolean deductions
+Deductions: 
+x0 = 1
+y0 = 1
+y1 = x1'
+Working on product digit 3
+Calculating carry over 3
+Taking div 2 of ((y2)) + () + ((x2)) + ()
+Carry over 3: ()
+Product sum 3: ((x0 and y3)) + ((x1 and y2)) + ((x2 and y1)) + ((x3 and y0)) + ()
+Calculating product equation 3
+Product equation 3: 1 = (x2 and x1 and x3' and y3) or (x2 and x3 and x1' and y3) or (x3 and x1 and x2' and y3) or (x1' and x2' and x3' and y3) or (y3' and x2' and x3' and x1) or (y3' and x1' and x3' and x2) or (y3' and x1' and x2' and x3) or (y3' and x2 and x1 and x3)
+if (y3 = 0) => (x2' and x3' and x1) or (x1' and x3' and x2) or (x1' and x2' and x3) or (x2 and x1 and x3) = 1
+if (y3 = 1) => (x2 and x1 and x3') or (x2 and x3 and x1') or (x3 and x1 and x2') or (x1' and x2' and x3') = 1
+y3 = (x2 and x1 and x3') or (x2 and x3 and x1') or (x3 and x1 and x2') or (x1' and x2' and x3')
+y3 = (x2 and x1 and x3') or (x2 and x3 and x1') or (x3 and x1 and x2') or (x1' and x2' and x3')
+Deduced: y3 = (x2 and x1 and x3') or (x2 and x3 and x1') or (x3 and x1 and x2') or (x1' and x2' and x3')
+Applying deduction to previous one: x0 = 1
+Applying deduction to previous one: y0 = 1
+Applying deduction to previous one: y1 = x1'
+Applying boolean deductions
+Applying deduction to previous one: y2 = x2'
+Applying boolean deductions
+Deductions: 
+x0 = 1
+y0 = 1
+y1 = x1'
+y2 = x2'
+Working on product digit 4
+Calculating carry over 4
+Taking div 2 of ((y3)) + ((x1 and x2')) + ((x2 and x1')) + ((x3)) + ()
+Found y3 in term y3
+Removed term - will now apply the new term 
+Expression after expression replace: (x2 and x1 and x3') or (x2 and x3 and x1') or (x3 and x1 and x2') or (x1' and x2' and x3')
+Sum A: ((x1 and x2')) + ((x2 and x1')) + ((x3))
+Sum A mod 2: (x2' and x3' and x1) or (x1' and x3' and x2) or (x1' and x2' and x3) or (x2 and x1 and x3)
+Expr B (already mod 2): (x2 and x1 and x3') or (x2 and x3 and x1') or (x3 and x1 and x2') or (x1' and x2' and x3')
+multi-term div mod part: 
+Taking div 2 of ((x1 and x2')) + ((x2 and x1')) + ((x3))
+Sum A: ((x2 and x1')) + ((x3))
+Sum A mod 2: (x3' and x2 and x1') or (x2' and x3) or (x1 and x3)
+Expr B (already mod 2): (x1 and x2')
+multi-term div mod part: (x2' and x3 and x1)
+Taking div 2 of ((x2 and x1')) + ((x3))
+multi-term div div part: ((x2 and x1' and x3))
+multi-term div result: ((x2 and x1' and x3)) + ((x2' and x3 and x1))
+multi-term div div part: ((x2 and x1' and x3)) + ((x2' and x3 and x1))
+multi-term div result: ((x2 and x1' and x3)) + ((x2' and x3 and x1))
+Carry over 4: ((x2 and x1' and x3)) + ((x2' and x3 and x1))
+Product sum 4: ((x1 and y3)) + ((x2 and y2)) + ((x3 and y1)) + ((x2 and x1' and x3)) + ((x2' and x3 and x1))
+Calculating product equation 4
+Found y3 in term x1 and y3
+Removed term - will now apply the new term x1
+Expression after expression replace: (x2 and x1 and x3') or (x3 and x1 and x2')
+Product equation 4: 0 = (x2 and x1 and x3') or (x1' and x2' and x3)
+if (x3 = 0) => (x2 and x1) = 0
+if (x3 = 1) => (x1' and x2') = 0
+x3 = (x2 and x1)
+x3 = (x1) or (x2)
+Executing recursive deduction.
+0 = (x2' and x1) or (x1' and x2)
+Deduced: x1 = x2
+Applying deduction to previous one: x0 = 1
+Applying deduction to previous one: y0 = 1
+Applying deduction to previous one: y1 = x1'
+Applying boolean deductions
+Applying deduction to previous one: y2 = x2'
+Applying boolean deductions
+Applying deduction to previous one: y3 = (x2 and x1 and x3') or (x2 and x3 and x1') or (x3 and x1 and x2') or (x1' and x2' and x3')
+Deductions: 
+x0 = 1
+y0 = 1
+y1 = x2'
+y2 = x2'
+y3 = x3'
+Applying recursive deductions.
+x3 = (x2)
+x3 = (x2)
+Deduced: x3 = x2
+Applying deduction to previous one: x0 = 1
+Applying deduction to previous one: y0 = 1
+Applying deduction to previous one: y1 = x2'
+Applying boolean deductions
+Applying deduction to previous one: y2 = x2'
+Applying boolean deductions
+Applying deduction to previous one: y3 = x3'
+Applying boolean deductions
+Applying deduction to previous one: x1 = x2
+Applying boolean deductions
+Deductions: 
+x0 = 1
+y0 = 1
+y1 = x2'
+y2 = x2'
+y3 = x2'
+x1 = x2
+Working on product digit 5
+Calculating carry over 5
+Taking div 2 of ((x2 and x1 and x3') or (x3 and x1 and x2')) + () + ((x3 and x1')) + ((x2 and x1' and x3)) + ((x2' and x3 and x1))
+Carry over 5: 
+Product sum 5: ((x2 and y3)) + ((x3 and y2))
+Calculating product equation 5
+Product equation 5: 0 = 
+Working on product digit 6
+Calculating carry over 6
+Taking div 2 of () + ()
+Carry over 6: 
+Product sum 6: ((x3 and y3))
+Calculating product equation 6
+Product equation 6: 0 = 
+Working on product digit 7
+Product sum 7: ()
+Calculating product equation 7
+Taking div 2 of ()
+Product equation 7: 0 = 
+Deductions: 
+x0 = 1
+y0 = 1
+y1 = x2'
+y2 = x2'
+y3 = x2'
+x1 = x2
+x3 = x2
