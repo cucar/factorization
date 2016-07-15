@@ -41,6 +41,21 @@ class Boolean {
 	public function copy() { 
 		return new Boolean($this->var->copy(), $this->negated);
 	}
+	
+	/* 
+	 * checks if the variable equals another variable 
+	 */
+	public function equals($var) { 
+		if ($this->var->equals($var->var) && $this->negated == $var->negated) return true;
+		else return false; 
+	}
 
+	/* 
+	 * checks if the variable equals another variable as negated form 
+	 */
+	public function equalsNegated($var) { 
+		if ($this->var->equals($var->var) && $this->negated == !$var->negated) return true;
+		else return false; 
+	}
 }
 

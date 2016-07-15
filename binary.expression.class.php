@@ -164,18 +164,116 @@ class BinaryExpression {
 		
 		// go through the terms and negate each one and "and" them 
 		$expr = $this->terms[0]->negate();
-		// debug: 
-		echo 'First negated term: ' . $expr->toString() . "\n";
+		// debug: echo 'First negated term: ' . $expr->toString() . "\n";
 		for ($i = 1; $i < count($this->terms); $i++) {
-			// debug: 
-			echo 'negating term ' . $i . ' ' . $this->terms[$i]->toString() . "\n";
+			// debug: echo 'negating term ' . $i . ' ' . $this->terms[$i]->toString() . "\n";
 			$negexpr = $this->terms[$i]->negate(); 
-			// debug: 
-			echo 'negated term ' . $i . ' ' . $negexpr->toString() . " - applying to expression\n";
+			// debug: echo 'negated term ' . $i . ' ' . $negexpr->toString() . " - applying to expression\n";
 			$expr = $expr->and_expr($negexpr);
-			// debug: 
-			echo 'applied to expression' . "\n";
+			// debug: echo 'applied to expression' . "\n";
 		}
+		
+		// return the new negated expression  
+		return $expr;
+	}
+	
+	/* 
+	 * negates the expression - negate all terms and "and" them - alternative implementation - should take less time but it seems to be slower  
+	 */
+	public function new_negate() { 
+		
+		// if the expression does not have any terms, it's basically a value of 1  
+		if (count($this->terms) == 0) return new BinaryExpression(array(new Term(array(), 1)));
+
+		// debug: 
+		// echo "\n\nNegating expression: " . $this->toString() . "\n";
+		
+		// the new expression we will be returning - start with empty expression - stands for 1 
+		$expr = new BinaryExpression();
+		
+		// initialize the index for the terms we added to the expression 
+		$expr_index = array();
+		
+		// term count - this determines the loop counts  
+		$source_term_count = count($this->terms);
+		
+		// loop through every every term of the expression as source 
+		for ($source_term_index = 0; $source_term_index < $source_term_count; $source_term_index++) { 
+
+			// source term 
+			$source_term = $this->terms[$source_term_index];
+						
+			// variable count in the source term 
+			$source_term_var_count = count($source_term->vars);
+			
+			// echo "working on term: " . $source_term->toString() . "\n";
+			
+			// term count in target expression 
+			$target_term_count = count($expr->terms);
+					
+			// loop through every variable of the source term 
+			for ($source_var_index = 0; $source_var_index < $source_term_var_count; $source_var_index++) {
+				
+				// source variable - negated  
+				$source_var = $source_term->vars[$source_var_index]->negate();
+				
+				// echo "applying negated variable: " . $source_var->toString() . "\n";
+			
+				// if this is the initial term, just negate and copy it onto the new expression
+				if ($source_term_index == 0) {
+					$expr->terms[] = new Term(array($source_var));
+				}
+				// otherwise "and" the negated variable with every term in the target expression 
+				else {  
+				
+					// loop through every term in the target expression  
+					for ($target_term_index = 0; $target_term_index < $target_term_count; $target_term_index++) {
+						
+						// target term 
+						$target_term = $expr->terms[$target_term_index];
+						
+						// variable count in the target term 
+						$target_term_var_count = count($target_term->vars);
+						
+						// loop through the variables of the target term and build the new term 
+						$new_term = new Term(array($source_var));
+						for ($target_var_index = 0; $target_var_index < $target_term_var_count; $target_var_index++) {
+
+							// target variable  
+							$target_var = $target_term->vars[$target_var_index];
+
+							// if we see the same variable in the target term, don't add it again  
+							if ($target_var->equals($source_var)) continue; 
+
+							// if we see the negated variable in the target term, it means the term is nullified - nothing to do
+							if ($target_var->equalsNegated($source_var)) { $new_term->vars = array(); break; }
+								
+							// add the target variable to the new term 
+							$new_term->vars[] = $target_var;
+						}
+						
+						// add the new term to the expression if it's not nullified    
+						if ($new_term->vars) $expr->terms[] = $new_term; 
+					}
+				}
+				
+				// echo "expression after variable is applied: " . $expr->toString() . "\n";
+			}
+			
+			// echo "expression after term is applied (before deletions): " . $expr->toString() . "\n";
+				
+			// now delete the original terms we used for multiplication and re-index 
+			$expr->terms = array_slice($expr->terms, $target_term_count);
+			
+			// echo "expression after term is applied (after deletions): " . $expr->toString() . "\n";
+		}
+		
+		// debug:
+		// echo "Negated expression: " . $expr->toString() . "\n";
+		
+		$expr->simplify()->unify()->merge_terms();
+		
+		// 	if (count($this->terms) == 3) exit;
 		
 		// return the new negated expression  
 		return $expr;

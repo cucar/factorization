@@ -37,5 +37,13 @@ class Variable {
 		return new Variable($this->type, $this->digit);
 	}
 
+	/*
+	 * checks if the variable equals another variable
+	*/
+	public function equals($var) {
+		if ($this->type == $var->type && $this->digit == $var->digit) return true;
+		else return false;
+	}
+	
 }
 
