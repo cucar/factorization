@@ -39,7 +39,7 @@ class BinaryExpression {
 	 */
 	public function toString() { 
 		// if there are no terms, return 0 
-		if (count($this->terms) == 0) return '0';
+		if (count($this->terms) == 0) return '0 Expr';
 		$retval = '';
 		for ($i = 0; $i < count($this->terms); $i++) { 
 			$retval .= '(' . $this->terms[$i]->toString('and') . ')' . ($i != count($this->terms)-1 ? ' or ' : '');
@@ -155,9 +155,171 @@ class BinaryExpression {
 	}
 
 	/* 
+	 * returns the most commonly used variable in the expression 
+	 */
+	protected function most_commonly_used_variable() {
+		
+		// determine the number of times each variable is used 
+		$var_usages = array();
+		$var_index = array(); 
+		foreach ($this->terms as $term) {  
+			foreach ($term->vars as $var) {
+				$var_name = $var->var->toString();  
+				if (isset($vars[$var_name])) { 
+					$var_usages[$var_name]++;
+				}
+				else { 
+					$var_index[$var_name] = $var->var; 
+					$var_usages[$var_name] = 1;
+				}
+			}
+		}
+		
+		// reverse sort to get the most commonly used variable 
+		arsort($var_usages);
+		// debug: print_r($var_usages);
+		
+		// return the most commonly used variable
+		reset($var_usages);
+		return $var_index[key($var_usages)];
+	}
+	
+	/* 
 	 * negates the expression - negate all terms and "and" them 
 	 */
 	public function negate() { 
+		
+		// if the expression does not have any terms, it's basically a value of 1  
+		if (count($this->terms) == 0) return new BinaryExpression(array(new Term(array(), 1)));
+
+		// debug: echo "\n\nNegating expression: " . $this->toString() . "\n";
+		
+		// determine the split variable - most frequently used variable
+		$split_var = $this->most_commonly_used_variable();
+		// debug: echo "Most commonly used variable: " . $split_var->toString() . "\n";   
+		
+		// standard and negated forms of the variable => f(x) = xa + x'b + c
+		$x = new Boolean($split_var);
+		$x_negated = $x->negate();
+		
+		// functions we will get as a result of the variable split => f(x) = xa + x'b + c  
+		$expr_a = new BinaryExpression();
+		$expr_b = new BinaryExpression();
+		$expr_c = new BinaryExpression();
+
+		// loop through the terms and split based on variable  
+		foreach ($this->terms as $term) {
+			// debug: echo "checking term: " . $term->toString() . "\n"; 
+			if ($term->has_boolean($x)) $expr_a->terms[] = $term->remove_variable($x);
+			elseif ($term->has_boolean($x_negated)) $expr_b->terms[] = $term->remove_variable($x_negated);
+			else $expr_c->terms[] = $term->copy();
+		}
+		
+		// debug: echo "Expr a: " . $expr_a->toString() . "\n"; echo "Expr b: " . $expr_b->toString() . "\n"; echo "Expr c: " . $expr_c->toString() . "\n";
+		
+		// if there are no terms in expression a, it means variable x did not occur at all
+		if (count($expr_a->terms) == 0) $expr_a_type = 'zero';
+		// if there is only a single term with no variables in it, that means the split variable occurred by itself - in that case, a = 1 and a' = 0 
+		elseif (count($expr_a->terms) == 1 && count($expr_a->terms[0]->vars) == 0) $expr_a_type = 'one';
+		// otherwise x occurred with some variables along with x  
+		else $expr_a_type = 'expr';
+		
+		// if there are no terms in expression b, it means variable x' did not occur at all
+		if (count($expr_b->terms) == 0) $expr_b_type = 'zero';
+		// if there is only a single term with no variables in it, that means x' occurred by itself - in that case, b = 1 and b' = 0
+		elseif (count($expr_b->terms) == 1 && count($expr_b->terms[0]->vars) == 0) $expr_b_type = 'one';
+		// otherwise x' occurred with some variables along with x'
+		else $expr_b_type = 'expr';
+
+		// debug: echo "Expr a type: " . $expr_a_type . "\n"; echo "Expr b type: " . $expr_b_type . "\n";
+		
+		// calculate negations if needed 
+		if ($expr_a_type == 'expr') { 
+			$expr_a_negated = $expr_a->negate();
+			// debug: echo "Negated expr a: " . $expr_a_negated->toString() . "\n";
+		}
+		if ($expr_b_type == 'expr') {
+			$expr_b_negated = $expr_b->negate();
+			// debug: echo "Negated expr b: " . $expr_b_negated->toString() . "\n";
+		}
+		
+		// now calculate the negated expression => f'(x) = (xa' + x'b' + a'b')c'  
+		$new_expr = new BinaryExpression();
+		
+		// forget about c for now - calculate the negation with a and b - we will just "and" it with c'
+		// (xa + x'b)' = xa' + x'b' + a'b'  
+		if ($expr_a_type == 'expr' && $expr_b_type == 'expr') {
+			$expr_xa = $expr_a_negated->and_expr(new BinaryExpression(array(new Term(array($x)))));
+			// debug: echo "Expression xa' = " . $expr_xa->toString() . "\n"; 
+			$new_expr->add($expr_xa);
+			$expr_xb = $expr_b_negated->and_expr(new BinaryExpression(array(new Term(array($x_negated)))));
+			// debug: echo "Expression x'b' = " . $expr_xb->toString() . "\n";
+			$new_expr->add($expr_xb);
+			$expr_ab = $expr_a_negated->and_expr($expr_b_negated);
+			// debug: echo "Expression a'b' = " . $expr_ab->toString() . "\n";
+			$new_expr->add($expr_ab);
+			// debug: echo "xa' + x'b' + a'b' = " . $new_expr->toString() . "\n";
+			$new_expr->simplify()->unify()->merge_terms();
+			// debug: echo "xa' + x'b' + a'b' (simplified) = " . $new_expr->toString() . "\n";
+		}
+		// (xa + x')' = xa'
+		elseif ($expr_a_type == 'expr' && $expr_b_type == 'one') {
+			$new_expr->add($expr_a_negated->and_expr(new BinaryExpression(array(new Term(array($x))))));
+		}  
+		// (xa)' = x' + a'
+		elseif ($expr_a_type == 'expr' && $expr_b_type == 'zero') {
+			$new_expr->add(new BinaryExpression(array(new Term(array($x_negated)))));
+			$new_expr->add($expr_a_negated);
+		}
+		// (x + x'b)' = x'b'
+		elseif ($expr_a_type == 'one' && $expr_b_type == 'expr') {
+			$new_expr->add($expr_b_negated->and_expr(new BinaryExpression(array(new Term(array($x_negated))))));
+		}
+		// (x + x')' = 0 
+		elseif ($expr_a_type == 'one' && $expr_b_type == 'one') {
+			$new_expr->terms[] = new Term(array(), 0);
+		}
+		// (x)' = x'
+		elseif ($expr_a_type == 'one' && $expr_b_type == 'zero') {
+			$new_expr->terms[] = new Term(array($x_negated));
+		}
+		// (x'b)' = x + b'
+		elseif ($expr_a_type == 'zero' && $expr_b_type == 'expr') {
+			$new_expr->add(new BinaryExpression(array(new Term(array($x)))));
+			$new_expr->add($expr_b_negated);
+		}
+		// (x')' = x
+		elseif ($expr_a_type == 'zero' && $expr_b_type == 'one') {
+			$new_expr->terms[] = new Term(array($x));
+		}
+		// (0)' = 1
+		elseif ($expr_a_type == 'zero' && $expr_b_type == 'zero') {
+			$new_expr->terms[] = new Term(array(), 1);
+		}
+		
+		// now calculate the negated expression for c and apply it if needed
+		if (count($expr_c->terms) > 0) { 
+			$expr_c_negated = $expr_c->negate();
+			// debug: echo "c' = " . $expr_c_negated->toString() . "\n";
+			// debug: echo "xa' + x'b' + a'b' = " . $new_expr->toString() . "\n";
+			$new_expr = $new_expr->and_expr($expr_c_negated);
+			// debug: echo "(xa' + x'b' + a'b')c' = " . $new_expr->toString() . "\n";
+		}
+		
+		// debug: echo "Negated expression before simplification: " . $new_expr->toString() . "\n";
+		$new_expr->simplify()->unify()->merge_terms();
+		// debug: echo "Negated expression " . $this->toString() . ": " . $new_expr->toString() . "\n";
+		
+		// debug: if (count($this->terms) == 3) exit;
+		
+		// return the new negated expression  
+		return $new_expr;
+	}
+	
+	/* 
+	 * negates the expression - negate all terms and "and" them - alternative implementation - better than alt 1   
+	 */
+	public function negate_alt2() { 
 		
 		// if the expression does not have any terms, it's basically a value of 1  
 		if (count($this->terms) == 0) return new BinaryExpression(array(new Term(array(), 1)));
@@ -180,7 +342,7 @@ class BinaryExpression {
 	/* 
 	 * negates the expression - negate all terms and "and" them - alternative implementation - should take less time but it seems to be slower  
 	 */
-	public function new_negate() { 
+	public function negate_alt1() { 
 		
 		// if the expression does not have any terms, it's basically a value of 1  
 		if (count($this->terms) == 0) return new BinaryExpression(array(new Term(array(), 1)));
@@ -352,13 +514,28 @@ class BinaryExpression {
 	*/
 	public function merge_terms() {
 	
+		// sort the terms by their variable counts 
+		$term_var_counts = array_map(function($term) { return count($term->vars); }, $this->terms);
+		asort($term_var_counts); 
+		$new_terms = array_map(function($term_index) { return $this->terms[$term_index]; }, array_keys($term_var_counts));
+		$this->terms = $new_terms;
+		
 		// check each term and see if it can be merged 
 		$terms = array();
 		for ($i = 0; $i < count($this->terms); $i++) {
-	
+			
+			// debug: echo "checking merge for term: " . $this->terms[$i]->toString() . "\n"; 
+			
 			// check if the term can be merged with another one - if not, simply keep it 
 			$merged_term = false; 
-			for ($j = 0; $j < count($terms); $j++) if ($terms[$j]->merge($this->terms[$i])) { $merged_term = true; break; }
+			for ($j = 0; $j < count($terms); $j++) {
+
+				// debug: echo "checking merge with term: " . $terms[$j]->toString() . "\n";
+				
+				if ($terms[$j]->merge($this->terms[$i])) { 
+					$merged_term = true; break; 
+				}
+			}
 			
 			// if the term could not be merged, copy as-is
 			if (!$merged_term) $terms[] = $this->terms[$i];
@@ -373,6 +550,9 @@ class BinaryExpression {
 	 * check if the expression is identical to another one 
 	 */
 	public function equals($expr) { 
+		
+		// check the object type 
+		if (!is_object($expr) || !is_a($expr, 'BinaryExpression')) return false; 
 		
 		// for the expressions to be equal, they have to have the same number of terms 
 		if (count($this->terms) != count($expr->terms)) return false; 

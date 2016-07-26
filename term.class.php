@@ -185,6 +185,9 @@ class Term {
 	 */
 	public function equals($term) { 
 		
+		// check the object type 
+		if (!is_object($term) || !is_a($term, 'Term')) return false; 
+		
 		// if the variable counts are different, terms are different
 		if (count($this->vars) != count($term->vars)) return false; 
 		

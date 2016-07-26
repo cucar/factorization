@@ -69,6 +69,17 @@ class Sum {
 		
 		// if we have only one expression, return binary expression with the same terms 
 		if (count($this->exprs) == 1) return $this->exprs[0]->copy();
+
+		// if a term appears twice in the sum, remove it - (x + x + y mod 2) = (y mod 2)
+		$duplicate_expressions = $this->duplicate_expressions();
+		if ($duplicate_expressions) {
+			echo "duplicate expression found in mod - removing: " . $this->exprs[$duplicate_expressions[0]]->toString() . "\n";
+			$sum = new Sum();
+			for ($i = 0; $i < count($this->exprs); $i++) if ($i != $duplicate_expressions[0] && $i != $duplicate_expressions[1]) $sum->add($this->exprs[$i]->copy());
+			$new_sum = $sum->mod();
+			echo "duplicate expression mod result of " . $this->toString() . ": " . $new_sum->toString() . "\n";
+			return $new_sum;
+		}
 		
 		// if we have only 2 binary expressions, (A + B mod 2) = (A and B') or (A' and B)
 		if (count($this->exprs) == 2) { 
@@ -168,6 +179,22 @@ class Sum {
 		return $this; 
 	}
 	
+	/* 
+	 * returns the duplicate expressions in sum - when applicable 
+	 */
+	protected function duplicate_expressions() { 
+		
+		// go through the expressions and see if they appear elsewhere in the sum 
+		for ($i = 0; $i < count($this->exprs); $i++) {
+		
+			// check if the expression appears elsewhere
+			for ($j = 0; $j < count($this->exprs); $j++) if ($i != $j && $this->exprs[$i]->equals($this->exprs[$j])) return array($i, $j);
+		}
+		
+		// no duplicate expression found - return false 
+		return false;
+	}
+	
 	/*
 	 * takes div 2 of an expression - returns a regular expression (not binary expression) 
 	*/
@@ -179,6 +206,20 @@ class Sum {
 		$this->simplify()->unify()->merge_terms();
 		// debug: echo 'after simplifications: ' . $this->toString() . "\n";
 		
+		// if a term appears twice in the sum, simplify it - (x + x + y div 2) = x + (y div 2) 
+		$duplicate_expressions = $this->duplicate_expressions();
+		if ($duplicate_expressions) {
+			$expr_x = $this->exprs[$duplicate_expressions[0]]->copy();
+			$sum_y = new Sum();
+			for ($i = 0; $i < count($this->exprs); $i++) if ($i != $duplicate_expressions[0] && $i != $duplicate_expressions[1]) $sum_y->add($this->exprs[$i]->copy());
+			// debug: 
+			echo "duplicate expression found in div - calculating " . $expr_x->toString() . ' + (' . $sum_y->toString() . ' div 2)' . "\n";
+			$sum = $sum_y->div();
+			$sum->add($expr_x);
+			echo "duplicate expression div result of " . $this->toString() . ": " . $sum->toString() . "\n";
+			return $sum;
+		}
+
 		// if we have no expressions or only one expression, nothing to do - return empty expression (zero) 
 		if (count($this->exprs) < 2) return new Sum();
 	
@@ -195,21 +236,28 @@ class Sum {
 
 		// if we have more than 2 terms, calculate the result recursively - where A is a decimal and B is binary: 
 		// (A + B div 2) = (A div 2) + ((A mod 2) and (B mod 2))
-		// debug: echo 'multi-term div: ' . $this->toString() . "\n";
+		// debug: 
+		echo 'multi-term div: ' . $this->toString() . "\n";
 		$sum_a = new Sum(array_slice($this->exprs,1));
-		// debug: echo "Sum A: " . $sum_a->toString() . "\n"; 
+		// debug: 
+		echo "Sum A: " . $sum_a->toString() . "\n"; 
 		$expr_a = $sum_a->mod();
-		// debug: echo "Sum A mod 2: " . $expr_a->toString() . "\n";
+		// debug: 
+		echo "Sum A mod 2: " . $expr_a->toString() . "\n";
 		$expr_b = $this->exprs[0]->copy();
-		// debug: echo "Expr B (already mod 2): " . $expr_b->toString() . "\n"; 
+		// debug: 
+		echo "Expr B (already mod 2): " . $expr_b->toString() . "\n"; 
 		$expr = $expr_a->and_expr($expr_b)->simplify()->unify()->merge_terms();
-		// debug: echo "multi-term div mod part: " . $expr->toString() . "\n"; 
+		// debug: 
+		echo "multi-term div mod part: " . $expr->toString() . "\n"; 
 		$sum = $sum_a->div();
-		// debug: echo "multi-term div div part: " . $sum->toString() . "\n";
+		// debug: 
+		echo "multi-term div div part: " . $sum->toString() . "\n";
 		$sum->add($expr);
 		$sum->simplify()->unify()->merge_terms();
 		$sum->simplify()->unify()->merge_terms();
-		// debug: echo "multi-term div result: " . $sum->toString() . "\n";
+		// debug: 
+		echo "multi-term div result of " . $this->toString() . ": " . $sum->toString() . "\n";
 		return $sum;
 	}
 	

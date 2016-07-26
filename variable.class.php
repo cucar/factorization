@@ -41,6 +41,7 @@ class Variable {
 	 * checks if the variable equals another variable
 	*/
 	public function equals($var) {
+		if (!is_object($var) || !is_a($var, 'Variable')) return false; 
 		if ($this->type == $var->type && $this->digit == $var->digit) return true;
 		else return false;
 	}

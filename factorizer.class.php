@@ -67,12 +67,12 @@ class Factorizer {
 			echo 'Product equation ' . $i . ": {$products[$i]} = ";
 			echo $product_expression->toString() . "\n";
 		
-			if ($i == 5) exit;
-		
+			// if ($i == 7) exit; 
+			
 			// deduce from the product expression
 			$this->deduce($products[$i], $product_expression);
 		
-			if ($i == 5) exit;
+			// if ($i == 7) exit;
 		}
 		
 		// print deductions
@@ -114,6 +114,8 @@ class Factorizer {
 		// try to find solution in the zero branch of that variable 
 		$branch_solution = $this->find_branch_solution($deductions, $reduction_var, 0);
 		if ($branch_solution) return $branch_solution;
+		// debug: 
+		echo $reduction_var->toString() . " = 0 reduction did not work - trying 1\n";
 
 		// zero branch did not work - try to find solution in the one branch of that variable 
 		$branch_solution = $this->find_branch_solution($deductions, $reduction_var, 1);
@@ -131,6 +133,9 @@ class Factorizer {
 
 		// get the variables that are used in all deductions 
 		$vars = $this->get_deductions_variables($deductions);
+		
+		// if there are no deduction variables, something went wrong - error out 
+		if (count($vars) == 0) throw new Exception('No deduction variables found.');
 		
 		// start with y0 - if we can find x variables, they replace y - if we can find higher order digits, they replace lower order digits 
 		$reduction_var = new Variable(y, 0);
@@ -269,6 +274,11 @@ class Factorizer {
 	 */
 	protected function get_branch_solution($deductions) { 
 		
+		// debug: echo "Checking if branch solution is complete\n";
+		
+		// get rid of totalities first 
+		$this->prune_totalities($deductions);
+		
 		// extracted x and y digits 
 		$x = array();
 		$y = array();
@@ -277,8 +287,14 @@ class Factorizer {
 		foreach ($deductions as $deduction) { 
 			
 			// if the deduction is not of var=value type, we can't deduce a solution
-			if (!is_a($deduction[0], 'Variable')) return false; 
-			if (is_object($deduction[1])) return false; 
+			if (!is_a($deduction[0], 'Variable')) {
+				// debug: echo "Not a variable!\n"; print_r($deduction[0]); 
+				return false; 
+			}
+			if (is_object($deduction[1])) { 
+				// debug: echo "Object!\n"; print_r($deduction[0]); print_r($deduction[1]); 
+				return false; 
+			}
 			
 			// get the x/y value 
 			if ($deduction[0]->type == x) $x[intval($deduction[0]->digit)] = $deduction[1];
@@ -415,7 +431,7 @@ class Factorizer {
 		echo $deduce_var->toString() . ' = ' . $deduce_var_expr1->toString() . "\n";
 
 		// if both equations are the same, the decision is clear 
-		if ($deduce_var_expr0->equals($deduce_var_expr1)) { 
+		if ($deduce_var_expr0->equals($deduce_var_expr1)) {
 			$this->deduction($deduce_var, $deduce_var_expr0);
 			return;
 		}
@@ -498,9 +514,15 @@ class Factorizer {
 		// if the variable is a boolean object, convert it to variable 
 		if (is_object($var) && is_a($var, 'Boolean')) { 
 			
+			// debug: 
+			echo "converting " . $var->toString() . " boolean to variable \n";
+			
 			// negate if needed 
 			if ($var->negated) { 
-				if (!is_object($val)) { if ($val == '1') $val = 0; else $val = 1; } 
+				if (!is_object($val)) {
+					echo "converting " . $var->toString() . " boolean to variable - value: $val \n"; 
+					if ($val == '1') $val = 0; else $val = 1; 
+				} 
 				elseif (method_exists($val, 'negate')) { 
 					$val = $val->negate();
 					if (method_exists($val, 'simplify')) $val->simplify()->unify()->merge_terms();
@@ -509,7 +531,7 @@ class Factorizer {
 			}
 			
 			// use the variable directly 
-			$var = $var->var; 
+			$var = $var->var;
 		}
 		
 		// if the value is a simple expression with a single variable, just set them as equal 
@@ -524,7 +546,7 @@ class Factorizer {
 		// add the new deduction to the set of deductions
 		$deductions[] = array($var, $val);
 		
-		// now do self deduction until there is no more to deduce 
+		// now do self deduction until there is no more to deduce
 		$this->self_deductions($deductions);
 		$this->print_deductions($deductions);
 	}
@@ -545,9 +567,11 @@ class Factorizer {
 		// debug: echo "New Deductions: " . $this->print_deductions($deductions_new) . "\n";
 				
 		// do self deduction until the deductions do not change 
-		while (!$this->deductions_equal($deductions_original, $deductions_new)) { 
+		while (!$this->deductions_equal($deductions_original, $deductions_new)) {
 			$deductions_original = $deductions_new;
 			$deductions_new = $this->self_deduction($deductions_original);
+			// debug: echo "Original Deductions: " . $this->print_deductions($deductions_original) . "\n";
+			// debug: echo "New Deductions: " . $this->print_deductions($deductions_new) . "\n";
 		}
 
 		// now set the new set of deductions 
@@ -567,7 +591,12 @@ class Factorizer {
 			
 			// check if the deduction appears in the other set 
 			$deduction_exists = false; 
-			foreach ($deductions2 as $deduction2) if ($this->deduction_equal($deduction1, $deduction2)) { $deduction_exists = true; break; }
+			foreach ($deductions2 as $deduction2) {  
+				if ($this->deduction_equal($deduction1, $deduction2)) { 
+					$deduction_exists = true; 
+					break; 
+				}
+			}
 			
 			// if the deduction does not exist, they cannot be the same 
 			if (!$deduction_exists) return false; 
@@ -582,9 +611,29 @@ class Factorizer {
 	 */
 	protected function deduction_equal($deduction1, $deduction2) { 
 
-		// check the print strings for the deductions to see if they are the same or not 
-		if ($this->print_deduction($deduction1) != $this->print_deduction($deduction2)) return false; 
-		else return true; 
+		// check both sides of the deductions to see if they are equal or not 
+		if (!$deduction1[0]->equals($deduction2[0])) { 
+			// debug: echo "Deductions different (left hand side): " . $this->print_deduction($deduction1) . ' vs ' . $this->print_deduction($deduction2) . "\n"; 
+			return false; 
+		}
+
+		// if one side is object and the other is not, they are not equal 
+		if ((is_object($deduction1[1]) && !is_object($deduction2[1])) || (!is_object($deduction1[1]) && is_object($deduction2[1]))) { 
+			// debug: echo "Deductions different (right hand side type): " . $this->print_deduction($deduction1) . ' vs ' . $this->print_deduction($deduction2) . "\n"; 
+			return false; 
+		} 
+		
+		// compare the right side as values 
+		if (!is_object($deduction1[1]) && !is_object($deduction2[1])) {
+			if ($deduction1[1] == $deduction2[1]) return true;   
+			// debug: echo "Deductions different (right hand side value): " . $this->print_deduction($deduction1) . ' vs ' . $this->print_deduction($deduction2) . "\n"; 
+			return false;
+		}
+
+		// compare right side as objects 
+		if ($deduction1[1]->equals($deduction2[1])) return true;   
+		// debug: echo "Deductions different (right hand side object): " . $this->print_deduction($deduction1) . ' vs ' . $this->print_deduction($deduction2) . "\n"; 
+		return false;
 	}
 	
 	/* 
@@ -665,7 +714,7 @@ class Factorizer {
 	 */
 	protected function reduce_deduction(&$var, &$val, &$deduction) { 
 	
-		// debug: echo "Applying new deduction to previous deductions: " . $this->print_deduction($deduction) . "\n";
+		// debug: echo "Applying new deduction " . $this->print_deduction(array($var, $val)) . " to previous deduction: " . $this->print_deduction($deduction) . "\n";
 	
 		// variable reductions - direct replacements 
 		if (is_a($var, 'Variable')) $this->reduce_deduction_from_var($var, $val, $deduction);
@@ -673,6 +722,8 @@ class Factorizer {
 		elseif (is_a($var, 'Term')) $this->reduce_deduction_from_zero_product($var, $val, $deduction);
 		// if we get a deduction that is something other than term or direct variable, something's wrong - error out 
 		else throw new Exception('Unknown deduction variable: ' . print_r($var, true));
+		
+		// debug: echo "Deduction after " . $this->print_deduction(array($var, $val)) . " application: " . $this->print_deduction($deduction) . "\n";
 	}
 	
 	/* 
@@ -923,7 +974,7 @@ class Factorizer {
 	/*
 	 * reduce a single variable in a var = constant type deduction from a new var = variable type deduction 
 	*/
-	protected function reduce_var_value_deduction_from_var_var(Variable $var, Variable $val, int $deduction_val) {
+	protected function reduce_var_value_deduction_from_var_var(Variable $var, Variable $val, $deduction_val) {
 
 		// nothing to change here  
 		return $deduction_val; 
@@ -1190,7 +1241,10 @@ class Factorizer {
 	
 		// apply the zero product in the expression
 		$expr->apply_zero_product($zero_product);
-	
+
+		// if the expression turned into a nothing, return 0
+		if (count($expr->terms) == 0) return 0;
+		
 		// if the expression turned into a value, return that
 		if (count($expr->terms) == 1 && count($expr->terms[0]->vars) == 0) return $expr->terms[0]->val;
 			

@@ -46,6 +46,7 @@ class Boolean {
 	 * checks if the variable equals another variable 
 	 */
 	public function equals($var) { 
+		if (!is_object($var) || !is_a($var, 'Boolean')) return false; 
 		if ($this->var->equals($var->var) && $this->negated == $var->negated) return true;
 		else return false; 
 	}
