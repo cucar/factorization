@@ -671,17 +671,40 @@ class BinaryExpression {
 				// if the term had additional variables, and them in the expression
 				$newexpr = $expr->copy();
 				if (count($newterm->vars) > 0) $newexpr = $newexpr->and_expr(new BinaryExpression(array($newterm))); 
+				$newexpr->simplify()->unify()->merge_terms();
 				
 				// now add the new expression to this one 
 				$this->add($newexpr);
 				
 				// so that we can know that we need to simplify 
-				$replacement_made = true; 
+				$replacement_made = true;
 			}
-			
-			// now apply the negated variable if it exists 
-			if ($this->terms[$i]->has_boolean((new Boolean($var))->negate())) {
-				 throw new Exception('Negated variable expression update not implemented yet');
+			// apply the negated variable if it exists 
+			elseif ($this->terms[$i]->has_boolean((new Boolean($var))->negate())) {
+				
+				// debug: echo "Found " . $var->toString() . " as negated in term " . $this->terms[$i]->toString() . "\n";
+				
+				// this term is being replaced - remove it in a separate loop to not mess with this cycle
+				$delete_terms[] = $i;
+				
+				// get a new term without that variable
+				$newterm = $this->terms[$i]->remove_variable((new Boolean($var))->negate());
+				// debug: echo "Applying the new term " . $newterm->toString() . "\n";
+				
+				// if the term had additional variables, and them in the expression
+				// debug: echo "Original expression: " . $expr->toString() . "\n"; 
+				$newexpr = $expr->negate();
+				// debug: echo "Negated expression: " . $newexpr->toString() . "\n"; 
+				if (count($newterm->vars) > 0) $newexpr = $newexpr->and_expr(new BinaryExpression(array($newterm)));
+				// debug: echo "New expression after application: " . $newexpr->toString() . "\n"; 
+				$newexpr->simplify()->unify()->merge_terms();
+				// debug: echo "New expression after application (simplified): " . $newexpr->toString() . "\n"; exit;
+				
+				// now add the new expression to this one
+				$this->add($newexpr);
+				
+				// so that we can know that we need to simplify
+				$replacement_made = true;
 			}
 		}
 

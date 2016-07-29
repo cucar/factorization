@@ -45,6 +45,15 @@ class Factorizer {
 		}
 		// debug: for ($i = 0; $i < $productlen - 1; $i++) echo $sums[$i]->toString() . " + carryover mod 2 = {$products[$i]}\n";
 		
+		// setup initial deductions to avoid trivial solutions - x0x1'x2'...xn' = 0
+		$trivial_x = new Term(array(new Boolean(new Variable('x', 0))));
+		$trivial_y = new Term(array(new Boolean(new Variable('y', 0))));
+		for ($i = 1; $i < $numlen; $i++) $trivial_x->add(new Boolean(new Variable('x', $i), true));
+		for ($i = 1; $i < $numlen; $i++) $trivial_y->add(new Boolean(new Variable('y', $i), true));
+		// $this->deductions[] = array($trivial_x, 0);
+		// $this->deductions[] = array($trivial_y, 0);
+		$this->print_deductions($this->deductions);
+		
 		// deduce at least one fact from each product
 		for ($i = 0; $i < $productlen; $i++) {
 		
@@ -364,10 +373,10 @@ class Factorizer {
 		$varcount = count($vars);
 	
 		// check the number of variables that appear in the expression - if it's more than 2, apply general deduction
-		if ($varcount > 1) return $this->deduce_general($val, $expr, $vars);
+		if ($varcount > 2) return $this->deduce_general($val, $expr, $vars);
 	
 		// two variable deduction
-		// if ($varcount == 2) return $this->deduce2($val, $expr, $vars);
+		if ($varcount == 2) return $this->deduce2($val, $expr, $vars); 
 	
 		// if there is only one variable, it's easy
 		if ($varcount == 1) return $this->deduce1($val, $expr, $vars[0]);
@@ -399,6 +408,107 @@ class Factorizer {
 	
 		// should not be reaching this point unless we forgot something
 		throw new Exception('Deductions1 unreachable point');
+	}
+	
+	/*
+	 * deductions from an equation with more than 2 variables
+	*/
+	protected function deduce_general_alt1($val, BinaryExpression $expr, $vars) {
+	
+		// if the value is one, negate the expression to be able to apply the formula 
+		if ($val == 1) { $expr = $expr->negate(); $val = 0; }
+		
+		// pick y variables over x - if there are none, just pick the highest one
+		$deduce_var = null;
+		foreach ($vars as $var) if ($var->type == y) $deduce_var = $var;
+		if ($deduce_var === null) { $deduce_var = $vars[0]; foreach ($vars as $var) if ($var->digit > $deduce_var->digit) $deduce_var = $var; }
+		// debug: echo "deduction variable: " . $deduce_var->toString() . "\n";
+
+		// standardize expression to be like f(x) = xa + x'b + c
+		$x = new Boolean($deduce_var);
+		$x_negated = $x->negate();
+		
+		// functions we will get as a result of the variable split => f(x) = xa + x'b + c
+		$expr_a = new BinaryExpression();
+		$expr_b = new BinaryExpression();
+		$expr_c = new BinaryExpression();
+		
+		// loop through the terms and split based on variable
+		foreach ($expr->terms as $term) {
+			// debug: echo "checking term: " . $term->toString() . "\n";
+			if ($term->has_boolean($x)) $expr_a->terms[] = $term->remove_variable($x);
+			elseif ($term->has_boolean($x_negated)) $expr_b->terms[] = $term->remove_variable($x_negated);
+			else $expr_c->terms[] = $term->copy();
+		}
+
+		// simplify as needed 
+		$expr_a->simplify()->unify()->merge_terms();
+		$expr_b->simplify()->unify()->merge_terms();
+		$expr_c->simplify()->unify()->merge_terms();
+		
+		// debug: 
+		// echo "expr a: " . $expr_a->toString() . "\n";
+		// echo "expr b: " . $expr_b->toString() . "\n";
+		// echo "expr c: " . $expr_c->toString() . "\n";
+		
+		// if there are no terms in expression a, it means variable x did not occur at all
+		if (count($expr_a->terms) == 0) $expr_a_type = 'zero';
+		// if there is only a single term with no variables in it, that means the variable x occurred by itself 
+		elseif (count($expr_a->terms) == 1 && count($expr_a->terms[0]->vars) == 0) $expr_a_type = 'one';
+		// otherwise x occurred with some variables along with x  
+		else $expr_a_type = 'expr';
+		
+		// if there are no terms in expression b, it means variable x' did not occur at all
+		if (count($expr_b->terms) == 0) $expr_b_type = 'zero';
+		// if there is only a single term with no variables in it, that means x' occurred by itself - in that case, b = 1 and b' = 0
+		elseif (count($expr_b->terms) == 1 && count($expr_b->terms[0]->vars) == 0) $expr_b_type = 'one';
+		// otherwise x' occurred with some variables along with x'
+		else $expr_b_type = 'expr';
+		
+		// if there are no terms in expression c, it means all variables ocurred with x or x'
+		if (count($expr_c->terms) == 0) $expr_c_type = 'zero';
+		// otherwise there were some terms that did not have x or x'
+		else $expr_c_type = 'expr';
+		
+		// if there are any terms that appear without x or x', they must all equal to zero 
+		if ($expr_c_type == 'expr') { 
+			echo "Deducing zero products from expr c: 0 = " . $expr_c->toString() . "\n";
+			for ($i = 0; $i < count($expr_c->terms); $i++) $this->deduction($expr_c->terms[$i], 0);
+		}
+		
+		// now pull x in terms of others - xa + x'b = 0
+		// a = 0, b = 0 => nothing to do 0 = 0  
+		if ($expr_a_type == 'zero' && $expr_b_type == 'zero') {
+			// do nothing 
+		}
+		// a = 1 => x = 0
+		if ($expr_a_type == 'one') {
+			$this->deduction($deduce_var, 0);
+		}
+		// b = 1 => x = 1
+		elseif ($expr_b_type == 'one') {
+			$this->deduction($deduce_var, 1);
+		}
+		// a = 0 and b = expr => x'b = 0 
+		elseif ($expr_a_type == 'zero' && $expr_b_type == 'expr') {
+			$expr_b = $expr_b->and_expr(new BinaryExpression(array(new Term(array($x_negated)))));
+			echo "Deducing zero products from expr b: 0 = " . $expr_b->toString() . "\n";
+			for ($i = 0; $i < count($expr_b->terms); $i++) $this->deduction($expr_b->terms[$i], 0);
+		}
+		// a = expr and b = 0 => xa = 0
+		elseif ($expr_a_type == 'expr' && $expr_b_type == 'zero') {
+			$expr_a = $expr_a->and_expr(new BinaryExpression(array(new Term(array($x)))));
+			echo "Deducing zero products from expr a: 0 = " . $expr_a->toString() . "\n";
+			for ($i = 0; $i < count($expr_a->terms); $i++) $this->deduction($expr_a->terms[$i], 0);
+		}
+		// a = expr and b = expr => check if they are the negation of each other 
+		else {
+			
+			// if b = a', x = b
+			$expr_a_negated = $expr_a->negate();
+			if (!$expr_a_negated->equals($expr_b)) throw new Exception("encountered undeductable equation. a = " . $expr_a->toString() . " b = " . $expr_b->toString());
+			$this->deduction($deduce_var, $expr_b); 
+		}
 	}
 	
 	/*
@@ -453,7 +563,10 @@ class Factorizer {
 	 * deductions from an equation with 2 variables
 	*/
 	protected function deduce2($val, $expr, $vars) {
-	
+
+		// pick y variables over x
+		if ($vars[0]->type == x && $vars[1]->type == y) $vars = array($vars[1], $vars[0]);  
+		
 		// apply each variable combination and get the results
 		$match00 = ($expr->apply($vars[0], 0)->apply($vars[1], 0)->evaluate() == $val);
 		$match01 = ($expr->apply($vars[0], 0)->apply($vars[1], 1)->evaluate() == $val);
@@ -476,16 +589,16 @@ class Factorizer {
 		// if there are 2 matches, we can still deduce something
 		if ( $match00 &&  $match01 && !$match10 && !$match11) { $this->deduction($vars[0], 0); return; }
 		if ( $match00 && !$match01 &&  $match10 && !$match11) { $this->deduction($vars[1], 0); return; }
-		if ( $match00 && !$match01 && !$match10 &&  $match11) { if (is_a($vars[0], 'Variable')) $boolvar = new Boolean($vars[0]); else $boolvar = $vars[0]; $this->deduction($vars[1], $boolvar); return; }
-		if (!$match00 &&  $match01 &&  $match10 && !$match11) { if (is_a($vars[0], 'Variable')) $boolvar = new Boolean($vars[0]); else $boolvar = $vars[0]; $this->deduction($vars[1], $boolvar->negate()); return; }
+		if ( $match00 && !$match01 && !$match10 &&  $match11) { $this->deduction($vars[0], new Boolean($vars[1])); return; }
+		if (!$match00 &&  $match01 &&  $match10 && !$match11) { $this->deduction($vars[0], (new Boolean($vars[1]))->negate()); return; }
 		if (!$match00 &&  $match01 && !$match10 &&  $match11) { $this->deduction($vars[1], 1); return; }
 		if (!$match00 && !$match01 &&  $match10 &&  $match11) { $this->deduction($vars[0], 1); return; }
 	
 		// if there are 3 matches, we are pushing it
-		if (!$match00 &&  $match01 &&  $match10 &&  $match11) { $this->deduction(new Term(array($vars[0]->negate(), $vars[1]->negate())), 0); return; } // x'y'=0
-		if ( $match00 && !$match01 &&  $match10 &&  $match11) { $this->deduction(new Term(array($vars[0]->negate(), $vars[1]          )), 0); return; } // x'y = 0
-		if ( $match00 &&  $match01 && !$match10 &&  $match11) { $this->deduction(new Term(array($vars[0]          , $vars[1]->negate())), 0); return; } // xy' = 0
-		if ( $match00 &&  $match01 &&  $match10 && !$match11) { $this->deduction(new Term(array($vars[0]          , $vars[1]          )), 0); return; } // xy = 0
+		if (!$match00 &&  $match01 &&  $match10 &&  $match11) { $this->deduction(new Term(array((new Boolean($vars[0]))->negate(), (new Boolean($vars[1]))->negate())), 0); return; } // x'y'=0
+		if ( $match00 && !$match01 &&  $match10 &&  $match11) { $this->deduction(new Term(array((new Boolean($vars[0]))->negate(), (new Boolean($vars[1]))          )), 0); return; } // x'y = 0
+		if ( $match00 &&  $match01 && !$match10 &&  $match11) { $this->deduction(new Term(array((new Boolean($vars[0]))          , (new Boolean($vars[1]))->negate())), 0); return; } // xy' = 0
+		if ( $match00 &&  $match01 &&  $match10 && !$match11) { $this->deduction(new Term(array((new Boolean($vars[0]))          , (new Boolean($vars[1]))          )), 0); return; } // xy = 0
 	
 		// everything matches? never seen that one before - error out
 		if ( $match00 &&  $match01 &&  $match10 &&  $match11) throw new Exception('Complete matches in deduction 2: ' . $val . ' = ' . $expr->toString());

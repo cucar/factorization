@@ -351,7 +351,7 @@ class Term {
 		// the argument has to be smaller or equal to this one 
 		if (count($zero_product->vars) > count($this->vars)) return; 
 		
-		// debug: echo "Checking if zero product is applicable: (" . $this->toString() . ') and (' . $zero_product->toString() . ")\n";
+		// debug: echo 'Checking if zero product ' . $zero_product->toString() . ' can be used to reduce the term: ' . $this->toString() . "\n";
 		
 		// loop through the variables and check if they can be found here
 		$diff_var = null; 
@@ -363,7 +363,7 @@ class Term {
 			$var_exists = false; 
 			for ($j = 0; $j < count($this->vars); $j++) { 
 				if ($this->vars[$j]->toString() == $zero_product->vars[$i]->toString()) { 
-					// debug: echo "Variable found: " . $this->vars[$i]->toString() . "\n";
+					// debug: echo "Variable found: " . $this->vars[$j]->toString() . "\n";
 					$var_exists = true; 
 				}
 			}
