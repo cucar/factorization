@@ -42,9 +42,9 @@ class BinaryExpression {
 		if (count($this->terms) == 0) return '0 Expr';
 		$retval = '';
 		for ($i = 0; $i < count($this->terms); $i++) { 
-			$retval .= '(' . $this->terms[$i]->toString('and') . ')' . ($i != count($this->terms)-1 ? ' or ' : '');
+			$retval .= $this->terms[$i]->toString() . ($i != count($this->terms)-1 ? ' + ' : '');
 		}
-		return $retval;
+		return '(' . $retval . ')';
 	}
 
 	/* 

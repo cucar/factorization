@@ -19,6 +19,7 @@ class Term {
 	public function __construct($vars = array(), $val = null) {
 		$this->vars = $vars;
 		$this->val = $val;
+		$this->sort();
 	}
 
 	/* 
@@ -26,6 +27,7 @@ class Term {
 	 */
 	public function add($var) { 
 		$this->vars[] = $var;
+		$this->sort();
 	}
 	
 	/* 
@@ -39,7 +41,8 @@ class Term {
 	 * "and"s another term 
 	 */
 	public function and_term($term) { 
-		foreach ($term->vars as $var) $this->vars[] = $var; 
+		foreach ($term->vars as $var) $this->vars[] = $var;
+		$this->sort(); 
 		return $this; 
 	}
 	
@@ -54,13 +57,34 @@ class Term {
 	}
 	
 	/* 
+	 * sorts the variables in the term 
+	 */
+	public function sort() { 
+		usort($this->vars, function($a, $b) {
+
+			// x before y 
+			if ($a->var->type == x && $b->var->type == y) return -1;
+			if ($a->var->type == y && $b->var->type == x) return 1;
+			
+			// sorting by digits within types 
+			if ($a->var->digit < $b->var->digit) return -1;
+			if ($a->var->digit > $b->var->digit) return 1;
+			
+			// same variable - negation should come after the positive version
+			if (!$a->negated && $b->negated) return -1;
+			if ($a->negated && !$b->negated) return 1;
+			
+			// everything is identical 
+			return 0;
+		});
+	}
+	
+	/* 
 	 * returns the term as a string - we do not have actual knowledge of which function is applied here so it has to be given 
 	 */
-	public function toString($op = 'and') { 
+	public function toString() { 
 		$retval = '';
-		for ($i = 0; $i < count($this->vars); $i++) {
-			$retval .= $this->vars[$i]->toString() . ($i != count($this->vars)-1 ? " $op " : '');
-		}
+		for ($i = 0; $i < count($this->vars); $i++) $retval .= $this->vars[$i]->toString();
 		if ($this->val !== null) $retval .= strval($this->val);
 		return $retval;
 	}

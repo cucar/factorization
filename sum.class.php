@@ -46,7 +46,7 @@ class Sum {
 	public function toString() { 
 		$retval = '';
 		for ($i = 0; $i < count($this->exprs); $i++) { 
-			$retval .= '(' . $this->exprs[$i]->toString() . ')' . ($i != count($this->exprs)-1 ? ' + ' : '');
+			$retval .= $this->exprs[$i]->toString() . ($i != count($this->exprs)-1 ? ' + ' : '');
 		}
 		return $retval;
 	}
