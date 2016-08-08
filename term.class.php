@@ -40,9 +40,24 @@ class Term {
 	/* 
 	 * "and"s another term 
 	 */
-	public function and_term($term) { 
+	public function and_term($term) {
+
+	    // if our value is zero, we stay the same
+        if (count($this->vars) == 0 && $this->val == 0) return $this;
+
+        // if the term's value is zero, become zero
+        if (count($this->vars) == 0 && $this->val == 0) { $this->vars = array(); $this->val = 0; return $this; }
+
+        // if our value is one, we become the term
+        if (count($this->vars) == 0 && $this->val == 1) { $this->vars = $term->copy()->vars; $this->val = $term->val; return $this; }
+
+        // otherwise add the term's variables
 		foreach ($term->vars as $var) $this->vars[] = $var;
-		$this->sort(); 
+
+        // sort for better display
+		$this->sort();
+
+        // return self
 		return $this; 
 	}
 	
@@ -274,6 +289,8 @@ class Term {
 			if ($term->vars[$i]->toString() == $var->toString()) { 
 				unset($term->vars[$i]);
 				$term->vars = array_values($term->vars);
+                // if there are no variables left, set the value as 1
+                if (count($term->vars) == 0) $term->val = 1;
 				return $term; 
 			}
 		}

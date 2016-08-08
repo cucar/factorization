@@ -25,9 +25,16 @@ class BinaryExpression {
 		foreach ($expr->terms as $term) $this->terms[] = $term->binary();
 	}
 
-	/*
-	 * returns the variables in the expression 
-	 */ 
+    /*
+     * add a new term to the expression (or)
+     */
+    public function add_term($term) {
+        $this->terms[] = $term->binary();
+    }
+
+    /*
+     * returns the variables in the expression
+     */
 	public function vars() { 
 		$vars = array();
 		foreach ($this->terms as $term) foreach ($term->vars as $var) if (!in_array($var->var, $vars)) $vars[] = $var->var;
@@ -42,7 +49,7 @@ class BinaryExpression {
 		if (count($this->terms) == 0) return '0 Expr';
 		$retval = '';
 		for ($i = 0; $i < count($this->terms); $i++) { 
-			$retval .= $this->terms[$i]->toString() . ($i != count($this->terms)-1 ? ' + ' : '');
+			$retval .= $this->terms[$i]->toString() . ($i != count($this->terms)-1 ? ' V ' : '');
 		}
 		return '(' . $retval . ')';
 	}
@@ -100,11 +107,11 @@ class BinaryExpression {
 		
 		// go through the terms and apply the variable in each of them 
 		for ($i = 0; $i < count($this->terms); $i++) $this->terms[$i]->apply_var($var, $val);
-		
-		// simplify the expression 
+
+        // simplify the expression
 		$this->simplify()->unify()->merge_terms();
-		
-		// echo "Expression after application: " . $this->toString() . "\n";
+
+        // echo "Expression after application: " . $this->toString() . "\n";
 		
 		// return self for further applications 
 		return $this;
@@ -158,18 +165,18 @@ class BinaryExpression {
 	 * returns the most commonly used variable in the expression 
 	 */
 	protected function most_commonly_used_variable() {
-		
-		// determine the number of times each variable is used 
+
+		// determine the number of times each variable is used
 		$var_usages = array();
 		$var_index = array(); 
 		foreach ($this->terms as $term) {  
 			foreach ($term->vars as $var) {
-				$var_name = $var->var->toString();  
-				if (isset($vars[$var_name])) { 
+				$var_name = $var->var->toString();
+				if (isset($var_usages[$var_name])) {
 					$var_usages[$var_name]++;
 				}
-				else { 
-					$var_index[$var_name] = $var->var; 
+				else {
+					$var_index[$var_name] = $var->var;
 					$var_usages[$var_name] = 1;
 				}
 			}
@@ -178,6 +185,9 @@ class BinaryExpression {
 		// reverse sort to get the most commonly used variable 
 		arsort($var_usages);
 		// debug: print_r($var_usages);
+
+        // if there are no variables, error out
+        if (count($var_index) == 0) throw new Exception('No variables found in expr: ' . print_r($this, true));
 		
 		// return the most commonly used variable
 		reset($var_usages);
@@ -192,7 +202,10 @@ class BinaryExpression {
 		// if the expression does not have any terms, it's basically a value of 1  
 		if (count($this->terms) == 0) return new BinaryExpression(array(new Term(array(), 1)));
 
-		// debug: echo "\n\nNegating expression: " . $this->toString() . "\n";
+        // if the expression has a single 1 term, return empty expression
+        if (count($this->terms) == 1 && count($this->terms[0]->vars) == 0 && $this->terms[0]->val == 1) return new BinaryExpression();
+
+        // debug: echo "\n\nNegating expression: " . $this->toString() . "\n";
 		
 		// determine the split variable - most frequently used variable
 		$split_var = $this->most_commonly_used_variable();
@@ -471,12 +484,12 @@ class BinaryExpression {
 	 * go through all terms and simplify as needed 
 	 */
 	public function simplify() { 
-		
+
 		// simplify - remove the conflicting terms
 		$terms = array();  
-		for ($i = 0; $i < count($this->terms); $i++) { 
-			$this->terms[$i]->simplify();
-			if ($this->terms[$i]->val === null || $this->terms[$i]->val === '1') $terms[] = $this->terms[$i];   
+		for ($i = 0; $i < count($this->terms); $i++) {
+            $this->terms[$i]->simplify();
+			if ($this->terms[$i]->val === null || $this->terms[$i]->val == 1) $terms[] = $this->terms[$i];
 		}
 		$this->terms = $terms;
 
@@ -726,6 +739,195 @@ class BinaryExpression {
 		// return self for further applications
 		return $this;
 	}
+
+	/*
+	 * converts the expression to sum of terms by doing xor (mod)
+	*/
+	public function convert_to_sum($split_var = false) {
+
+        // new sum to be returned
+        $sum = new Sum();
+
+        // if the expression does not have any terms, return empty sum
+        if (count($this->terms) == 0) return $sum;
+
+        // if there is a single term, just return it as a sum
+        if (count($this->terms) == 1) {
+            $sum->add(new BinaryExpression(array($this->terms[0]->copy())));
+            return $sum;
+        }
+
+        // debug: echo "\n\nConverting expression to sum: " . $this->toString() . "\n";
+
+        // determine the split variable if not given - most frequently used variable
+        if (!$split_var) $split_var = $this->most_commonly_used_variable();
+        // debug: echo "Most commonly used variable: " . $split_var->toString() . "\n";
+
+        // standard and negated forms of the variable => f(x) = xa + x'b + c
+        $x = new Boolean($split_var);
+        $x_negated = $x->negate();
+
+        // functions we will get as a result of the variable split => f(x) = xa + x'b + c
+        $expr_a = new BinaryExpression();
+        $expr_b = new BinaryExpression();
+        $expr_c = new BinaryExpression();
+
+        // loop through the terms and split based on variable
+        foreach ($this->terms as $term) {
+            // debug: echo "checking term: " . $term->toString() . "\n";
+            if ($term->has_boolean($x)) $expr_a->terms[] = $term->remove_variable($x);
+            elseif ($term->has_boolean($x_negated)) $expr_b->terms[] = $term->remove_variable($x_negated);
+            else $expr_c->terms[] = $term->copy();
+        }
+
+        // debug: echo "Expr a: " . $expr_a->toString() . "\n"; echo "Expr b: " . $expr_b->toString() . "\n"; echo "Expr c: " . $expr_c->toString() . "\n";
+
+        // if there are no terms in expression a, it means variable x did not occur at all
+        if (count($expr_a->terms) == 0) $expr_a_type = 'zero';
+        // if there is only a single term with no variables in it, that means the split variable occurred by itself - in that case, a = 1 and a' = 0
+        elseif (count($expr_a->terms) == 1 && count($expr_a->terms[0]->vars) == 0) $expr_a_type = 'one';
+        // otherwise x occurred with some variables along with x
+        else $expr_a_type = 'expr';
+
+        // if there are no terms in expression b, it means variable x' did not occur at all
+        if (count($expr_b->terms) == 0) $expr_b_type = 'zero';
+        // if there is only a single term with no variables in it, that means x' occurred by itself - in that case, b = 1 and b' = 0
+        elseif (count($expr_b->terms) == 1 && count($expr_b->terms[0]->vars) == 0) $expr_b_type = 'one';
+        // otherwise x' occurred with some variables along with x'
+        else $expr_b_type = 'expr';
+
+        // if there are no terms in expression c, it means all terms had x or x'
+        if (count($expr_c->terms) > 0) $expr_c_type = 'expr';
+        else $expr_c_type = 'zero';
+
+        // debug: echo "Expr a type: " . $expr_a_type . "\n"; echo "Expr b type: " . $expr_b_type . "\n"; echo "Expr c type: " . $expr_c_type . "\n";
+
+        // if A = 0 and B = 0 and C = 0, sum = 0 but that should not happen - it's handled above
+        if ($expr_a_type == 'zero' && $expr_b_type == 'zero' && $expr_c_type == 'zero') throw new Exception('All sums zero - should not reach this code.');
+
+        //****************************************************************************************************************************************************************************************
+        // first, calculate the part without C - xA + x'B
+        //****************************************************************************************************************************************************************************************
+
+        // if A = 0 and B = 1 (e.g. x'), sum = x'
+        if ($expr_a_type == 'zero' && $expr_b_type == 'one') {
+            $sum->add(new BinaryExpression(array(new Term(array($x_negated)))));
+        }
+        // if A = 0 and B = expr (e.g. x'B), sum = x'B
+        elseif ($expr_a_type == 'zero' && $expr_b_type == 'expr') {
+            $sum_b = $expr_b->convert_to_sum();
+            $sum->add_sum($sum_b->multiply(new BinaryExpression(array(new Term(array($x_negated))))));
+        }
+        // if A = 1 and B = 0 (e.g. x), sum = x
+        elseif ($expr_a_type == 'one' && $expr_b_type == 'zero') {
+            $sum->add(new BinaryExpression(array(new Term(array($x)))));
+        }
+        // if A = 1 and B = 1 (e.g. x + x'), sum = x + x' = 1
+        elseif ($expr_a_type == 'one' && $expr_b_type == 'one') {
+            $sum->add(new BinaryExpression(array(new Term(array(), 1))));
+        }
+        // if A = 1 and B = expr (e.g. x + x'B), sum = x + x'B
+        elseif ($expr_a_type == 'one' && $expr_b_type == 'expr') {
+            $sum_b = $expr_b->convert_to_sum();
+            $sum->add(new BinaryExpression(array(new Term(array($x)))));
+            $sum->add_sum($sum_b->multiply(new BinaryExpression(array(new Term(array($x_negated))))));
+        }
+        // if A = expr and B = 0, sum = xA
+        elseif ($expr_a_type == 'expr' && $expr_b_type == 'zero') {
+            $sum_a = $expr_a->convert_to_sum();
+            $sum->add_sum($sum_a->multiply(new BinaryExpression(array(new Term(array($x))))));
+        }
+        // if A = expr and B = 1, sum = xA + x'
+        elseif ($expr_a_type == 'expr' && $expr_b_type == 'one') {
+            $sum_a = $expr_a->convert_to_sum();
+            $sum->add_sum($sum_a->multiply(new BinaryExpression(array(new Term(array($x))))));
+            $sum->add(new BinaryExpression(array(new Term(array($x_negated)))));
+        }
+        // if A = expr and B = expr, sum = xA + x'B
+        elseif ($expr_a_type == 'expr' && $expr_b_type == 'expr') {
+            $sum_a = $expr_a->convert_to_sum();
+            $sum_b = $expr_b->convert_to_sum();
+            $sum->add_sum($sum_a->multiply(new BinaryExpression(array(new Term(array($x))))));
+            $sum->add_sum($sum_b->multiply(new BinaryExpression(array(new Term(array($x_negated))))));
+        }
+        else {
+            throw new Exception('Unknown condition - should not have reached here.');
+        }
+
+        //****************************************************************************************************************************************************************************************
+        // now, calculate the part for C if needed - xA' + x'B'
+        //****************************************************************************************************************************************************************************************
+
+        // if C != 0, sum = xA + x'B + C(xA' + x'B') - we already calculated xA + x'B above - now we calculate xA' + x'B' (sum c) and multiply it with C before adding to the main sum
+        if ($expr_c_type == 'expr') {
+
+            // calculate xA' + x'B'
+            $sum_c = new Sum();
+
+            // if A = 0 and B = 1 (e.g. x' + C), sum c = x
+            if ($expr_a_type == 'zero' && $expr_b_type == 'one') {
+                $sum_c->add(new BinaryExpression(array(new Term(array($x)))));
+            }
+            // if A = 0 and B = expr (e.g. x'B + C), sum c = x + x'B'
+            elseif ($expr_a_type == 'zero' && $expr_b_type == 'expr') {
+                $expr_b_negated = $expr_b->negate();
+                $sum_b_negated = $expr_b_negated->convert_to_sum();
+                $sum_c->add(new BinaryExpression(array(new Term(array($x)))));
+                $sum_c->add_sum($sum_b_negated->multiply(new BinaryExpression(array(new Term(array($x_negated))))));
+            }
+            // if A = 1 and B = 0 (e.g. x + C), sum c = x'
+            elseif ($expr_a_type == 'one' && $expr_b_type == 'zero') {
+                $sum_c->add(new BinaryExpression(array(new Term(array($x_negated)))));
+            }
+            // if A = 1 and B = 1 (e.g. x + x' + C), sum c = 0
+            elseif ($expr_a_type == 'one' && $expr_b_type == 'one') {
+                // nothing to add
+            }
+            // if A = 1 and B = expr (e.g. x + x'B + C), sum c = x'B'
+            elseif ($expr_a_type == 'one' && $expr_b_type == 'expr') {
+                $expr_b_negated = $expr_b->negate();
+                $sum_b_negated = $expr_b_negated->convert_to_sum();
+                $sum_c->add_sum($sum_b_negated->multiply(new BinaryExpression(array(new Term(array($x_negated))))));
+            }
+            // if A = expr and B = 0 (e.g. xA + C), sum c = xA' + x'
+            elseif ($expr_a_type == 'expr' && $expr_b_type == 'zero') {
+                $expr_a_negated = $expr_a->negate();
+                $sum_a_negated = $expr_a_negated->convert_to_sum();
+                $sum_c->add(new BinaryExpression(array(new Term(array($x_negated)))));
+                $sum_c->add_sum($sum_a_negated->multiply(new BinaryExpression(array(new Term(array($x))))));
+            }
+            // if A = expr and B = 1 (e.g. xA + x' + C), sum c = xA'
+            elseif ($expr_a_type == 'expr' && $expr_b_type == 'one') {
+                $expr_a_negated = $expr_a->negate();
+                $sum_a_negated = $expr_a_negated->convert_to_sum();
+                $sum_c->add_sum($sum_a_negated->multiply(new BinaryExpression(array(new Term(array($x))))));
+            }
+            // if A = expr and B = expr (e.g. xA + x'B + C), sum c = xA' + x'B'
+            elseif ($expr_a_type == 'expr' && $expr_b_type == 'expr') {
+                $expr_a_negated = $expr_a->negate();
+                $expr_b_negated = $expr_b->negate();
+                $sum_a_negated = $expr_a_negated->convert_to_sum();
+                $sum_b_negated = $expr_b_negated->convert_to_sum();
+                $sum_c->add_sum($sum_a_negated->multiply(new BinaryExpression(array(new Term(array($x))))));
+                $sum_c->add_sum($sum_b_negated->multiply(new BinaryExpression(array(new Term(array($x_negated))))));
+            }
+            else {
+                throw new Exception('Unknown condition - should not have reached here.');
+            }
+
+            // now multiply the sum c with C and add to the main sum
+            $sum->add_sum($sum_c->multiply_sum($expr_c->convert_to_sum()));
+        }
+
+        // debug: echo "Converted Sum before simplification: " . $sum->toString() . "\n";
+        $sum->simplify()->unify()->merge_terms();
+        // debug: echo "Converted Sum after simplification " . $this->toString() . ": " . $sum->toString() . "\n";
+
+        // debug: if (count($this->terms) == 3) exit;
+
+        // return the new sum
+        return $sum;
+    }
 	
 }
 

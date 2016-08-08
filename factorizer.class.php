@@ -565,8 +565,8 @@ class Factorizer {
 	protected function deduce2($val, $expr, $vars) {
 
 		// pick y variables over x
-		if ($vars[0]->type == x && $vars[1]->type == y) $vars = array($vars[1], $vars[0]);  
-		
+		if ($vars[0]->type == x && $vars[1]->type == y) $vars = array($vars[1], $vars[0]);
+
 		// apply each variable combination and get the results
 		$match00 = ($expr->apply($vars[0], 0)->apply($vars[1], 0)->evaluate() == $val);
 		$match01 = ($expr->apply($vars[0], 0)->apply($vars[1], 1)->evaluate() == $val);
