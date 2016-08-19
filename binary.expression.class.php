@@ -622,7 +622,7 @@ class BinaryExpression {
 			}
 			
 			// variable replace 
-			if (is_object($deduction[1])) { 
+			if (is_object($deduction[1])) {
 				$this->apply_var_replace($deduction[0], $deduction[1]);
 				continue;
 			}
@@ -642,12 +642,12 @@ class BinaryExpression {
 		
 		// go through the terms and replace the variable in each of them
 		for ($i = 0; $i < count($this->terms); $i++) $this->terms[$i]->apply_var_replace($oldvar, $newvar);
-	
-		// now simplify, unify and merge terms 
+
+        // now simplify, unify and merge terms
 		$this->simplify()->unify()->merge_terms();
 		
 		// echo "Expression after variable replace: " . $this->toString() . "\n";
-		
+
 		// return self for further applications
 		return $this;
 	}

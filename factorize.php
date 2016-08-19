@@ -5,12 +5,12 @@ require_once 'factorizer.class.php';
 // for tracking time 
 $time_start = microtime(true);
 
-$product_decimal = '8';
+// $product_decimal = '4';
 // $product_decimal = '9';
 // $product_decimal = '15';
 // $product_decimal = '21';
 // $product_decimal = '22';
-// $product_decimal = '25';
+$product_decimal = '25';
 // $product_decimal = '33';
 // $product_decimal = '35';
 // $product_decimal = '49';

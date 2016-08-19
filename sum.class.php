@@ -203,6 +203,41 @@ class Sum {
 	}
 
     /*
+     * determines the deduction expression - should be an expression that contains a single variable by itself - returns the index of it
+    */
+    public function determine_deduction_expr() {
+
+        // check the expressions in the sum - pick the first one that appears by itself and nowhere else
+        $potentials = array();
+        for ($i = 0; $i < count($this->exprs); $i++) if (count($this->exprs[$i]->terms) == 1 && count($this->exprs[$i]->terms[0]->vars) == 1) $potentials[$i] = $this->exprs[$i]->terms[0]->vars[0];
+
+        // now check to see if the potentials appear anywhere else
+        foreach ($potentials as $index => $var) {
+
+            $variable_found = false;
+            for ($i = 0; $i < count($this->exprs); $i++) {
+                if ($i == $index) continue;
+                foreach ($this->exprs[$i]->terms as $term) if ($term->has_variable($var->var)) { $variable_found = true; break 2; }
+            }
+            if (!$variable_found) return $index;
+        }
+
+        // if we could not find an expression that contains a single variable, we will try to do zero product deductions
+        echo 'Could not find a deduction expression: ' . $this->toString() . "\n";
+        return -1;
+    }
+
+    /*
+     * removes a given expression from the sum and returns the new sum without it
+    */
+    public function remove_expr($expr_index) {
+        $sum = $this->copy();
+        unset($sum->exprs[$expr_index]);
+        $sum->exprs = array_values($sum->exprs);
+        return $sum;
+    }
+
+    /*
      * returns the most commonly used variable in the expression - only works if all expressions are single term expressions
      */
     public function most_commonly_used_variable() {
@@ -230,6 +265,20 @@ class Sum {
         // return the most commonly used variable
         reset($var_usages);
         return $var_index[key($var_usages)];
+    }
+
+    /*
+     * removes duplicate expressions from the sum
+    */
+    public function remove_duplicate_expressions() {
+
+        $duplicate_expressions = $this->duplicate_expressions();
+        if (!$duplicate_expressions) return;
+
+        echo "duplicate expression found in mod - removing: " . $this->exprs[$duplicate_expressions[0]]->toString() . "\n";
+        $sum = new Sum();
+        for ($i = 0; $i < count($this->exprs); $i++) if ($i != $duplicate_expressions[0] && $i != $duplicate_expressions[1]) $sum->add($this->exprs[$i]->copy());
+        $this->exprs = $sum->exprs;
     }
 
     /*
