@@ -1417,7 +1417,7 @@ class Factorizer {
     protected function reduce_var_var_deduction_from_zero_product(Term $zero_product, Variable $deduction_var) {
 
         // if the zero product has only a single term, it may be applicable - otherwise not
-        if (count($zero_product->vars) != 1) return $deduction_bool;
+        if (count($zero_product->vars) != 1) return $deduction_var;
 
         // if the zero product matches, return zero
         if ($deduction_var->toString() == $zero_product->vars[0]->toString()) return 0;
