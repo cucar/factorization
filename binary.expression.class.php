@@ -76,45 +76,54 @@ class BinaryExpression {
 		if (is_object($val)) throw new Exception('Expression applications not implemented');
 		
 		// go through the terms and apply variable in those places with the given value 
-		return $expr->apply_var($var, $val);
+		$expr->apply_var($var, $val);
+
+        return $expr;
 	}
 
 	/* 
-	 * applies a zero product value to the expression  
+	 * applies a zero product value to the expression - returns if the expression changed or not as a result of applying the zero product
 	 */
 	public function apply_zero_product(Term $zero_product) { 
 		
 		// echo "Applying zero product " . $zero_product->toString() . "\n";
 		
-		// go through the terms and apply the zero product in each of them 
-		for ($i = 0; $i < count($this->terms); $i++) $this->terms[$i]->apply_zero_product($zero_product);
+		// go through the terms and apply the zero product in each of them - even if a single term changed, the entire expression has changed
+        $expr_changed = false;
+		for ($i = 0; $i < count($this->terms); $i++) {
+            $term_changed = $this->terms[$i]->apply_zero_product($zero_product);
+            if ($term_changed && !$expr_changed) $expr_changed = true;
+        }
 		
-		// simplify the expression 
-		$this->simplify()->unify()->merge_terms();
+		// simplify the expression if it changed
+		if ($expr_changed) $this->simplify()->unify()->merge_terms();
 		
 		// debug: echo "Expression after application: " . $this->toString() . "\n";
 		
-		// return self for further applications 
-		return $this;
+		// return if the expression changed or not
+		return $expr_changed;
 	}
 	
 	/* 
-	 * applies a variable value to the expression - simplest application  
+	 * applies a variable value to the expression - simplest application - returns if the expression changed or not as a result
 	 */
 	public function apply_var($var, $val) { 
 		
 		// echo "Applying " . $var->toString() . ' = ' . $val . "\n";
 		
 		// go through the terms and apply the variable in each of them 
-		for ($i = 0; $i < count($this->terms); $i++) $this->terms[$i]->apply_var($var, $val);
+        $expr_changed = false;
+		for ($i = 0; $i < count($this->terms); $i++) {
+            $term_changed = $this->terms[$i]->apply_var($var, $val);
+            if ($term_changed && !$expr_changed) $expr_changed = true;
+        }
 
-        // simplify the expression
-		$this->simplify()->unify()->merge_terms();
-
+        // simplify the expression if it changed
+        if ($expr_changed) $this->simplify()->unify()->merge_terms();
         // echo "Expression after application: " . $this->toString() . "\n";
-		
-		// return self for further applications 
-		return $this;
+
+        // return if the expression changed or not
+        return $expr_changed;
 	}
 	
 	/* 
@@ -598,8 +607,7 @@ class BinaryExpression {
 	 */
 	public function apply_deductions($deductions) { 
 		
-		// debug: 
-		echo "Applying deductions for " . $this->toString() . "\n";
+		// debug: echo "Applying deductions for " . $this->toString() . "\n";
 		
 		// go through the deductions and apply them one by one 
 		foreach ($deductions as $deduction) { 
@@ -607,63 +615,70 @@ class BinaryExpression {
 			// debug: echo "checking deduction: " . $deduction[0]->toString() . ' = ' . (method_exists($deduction[1], 'toString') ? $deduction[1]->toString() : $deduction[1]) . "\n";
 			
 			// zero product application 
-			if (is_a($deduction[0], 'Term')) { 
+			if (is_a($deduction->left, 'Term')) { 
 				// debug: 
-				echo "Applying zero product deduction for " . $deduction[0]->toString() . ' = ' . (method_exists($deduction[1], 'toString') ? $deduction[1]->toString() : $deduction[1]) . "\n";
-				$this->apply_zero_product($deduction[0]);
+				echo "Applying zero product deduction for " . $deduction->left->toString() . ' = ' . (method_exists($deduction->right, 'toString') ? $deduction->right->toString() : $deduction->right) . "\n";
+				$this->apply_zero_product($deduction->left);
 				continue; 
 			}
 
 			// expression application
-			if (is_object($deduction[1]) && !is_a($deduction[1], 'Boolean') && !is_a($deduction[1], 'Variable')) {
-				// debug: echo "Applying expression deduction for " . $deduction[0]->toString() . ' = ' . $deduction[1]->toString() . "\n";
-				$this->apply_var_expr($deduction[0], $deduction[1]);
+			if (is_object($deduction->right) && !is_a($deduction->right, 'Boolean') && !is_a($deduction->right, 'Variable')) {
+				// debug: echo "Applying expression deduction for " . $deduction->left->toString() . ' = ' . $deduction->right->toString() . "\n";
+				$this->apply_var_expr($deduction->left, $deduction->right);
 				continue; 
 			}
 			
 			// variable replace 
-			if (is_object($deduction[1])) {
-				$this->apply_var_replace($deduction[0], $deduction[1]);
+			if (is_object($deduction->right)) {
+				$this->apply_var_replace($deduction->left, $deduction->right);
 				continue;
 			}
 				
 			// simple deduction application 
-			$this->apply_var($deduction[0], $deduction[1]);
+			$this->apply_var($deduction->left, $deduction->right);
 		}
 		// debug: echo 'Deductions applied: ' . $this->toString() . "\n";
 	}
 	
 	/*
-	 * applies a variable replace to the expression - relatively simpler application
+	 * applies a variable replace to the expression - relatively simpler application - returns if the expression has changed as a result of the application
 	*/
 	public function apply_var_replace($oldvar, $newvar) {
 	
 		// echo "Applying variable replace: " . $oldvar->toString() . ' = ' . $newvar->toString() . "\n";
 		
 		// go through the terms and replace the variable in each of them
-		for ($i = 0; $i < count($this->terms); $i++) $this->terms[$i]->apply_var_replace($oldvar, $newvar);
+        $expr_changed = false;
+		for ($i = 0; $i < count($this->terms); $i++) {
+		    $term_changed = $this->terms[$i]->apply_var_replace($oldvar, $newvar);
+            if ($term_changed && !$expr_changed) $expr_changed = true;
+        }
+
+        // if the expression has not changed, nothing to do
+        if (!$expr_changed) return false;
 
         // now simplify, unify and merge terms
 		$this->simplify()->unify()->merge_terms();
 		
 		// echo "Expression after variable replace: " . $this->toString() . "\n";
 
-		// return self for further applications
-		return $this;
+		// return true to indicate that the expression has changed as a result of this application
+		return true;
 	}
 	
 	/*
-	 * applies a deduction of type variable = expression to the expression
+	 * applies a deduction of type variable = expression to the expression - returns if the expression changed or not
 	*/
 	public function apply_var_expr(Variable $var, BinaryExpression $expr) {
 	
-		// debug: 
-		echo "Applying variable expression: " . $var->toString() . ' = ' . $expr->toString() . "\n";
+		// debug: echo "Applying variable expression: " . $var->toString() . ' = ' . $expr->toString() . "\n";
 		
 		// simplify to make sure we won't hit any cases where we see the positive and negative of the same variable in the same term 
 		$this->simplify()->unify()->merge_terms();
 		
 		// go through the terms and replace the variable in each of them
+        $replacement_made = false;
 		$delete_terms = array();
 		$original_term_count = count($this->terms); 
 		for ($i = 0; $i < $original_term_count; $i++) { 
@@ -736,8 +751,8 @@ class BinaryExpression {
 			echo "Expression after expression replace: " . $this->toString() . "\n";
 		}
 		
-		// return self for further applications
-		return $this;
+		// return if the expression changed or not
+		return $replacement_made;
 	}
 
 	/*

@@ -1,6 +1,8 @@
 <?php
 
 require_once 'sum.class.php';
+require_once 'equation.class.php';
+require_once 'deducer.class.php';
 
 /*
  * factorization problem solver
@@ -13,8 +15,15 @@ class Factorizer {
     // carry overs calculated for the product
     protected $carryovers = array();
 
-    // deductions from equations
-    protected $deductions = array();
+    // deducer helper object
+    protected $deducer;
+
+    /*
+     * constructor - initialize deducer
+    */
+    public function __construct() {
+        $this->deducer = new Deducer();
+    }
 
     /*
      * main routine to factorize
@@ -33,6 +42,18 @@ class Factorizer {
 
         // x0 and y0 has to be one for the algorithm to work
         if ($products[0] != 1) throw new Exception('Factorization algorithm only works for odd numbers.');
+
+        // setup initial deduction to avoid trivial solution x = 1 - x1'x2'...xn' = 0
+        $trivial_x = new Term();
+        for ($i = 1; $i < $numlen; $i++) $trivial_x->add(new Boolean(new Variable(x, $i), true));
+        echo "Trivial solution eliminating deduction for x: " . $trivial_x->toString() . " = 0\n";
+        $this->deducer->add(new Equation($trivial_x, 0));
+
+        // setup initial deduction to avoid trivial solution y = 1 - y1'y2'...yn' = 0 - deduced from the product - transformed to x since at this point they are interchangeable
+        $trivial_y = new Term();
+        for ($i = 1; $i < $numlen; $i++) $trivial_y->add(new Boolean(new Variable(x, $i), $products[$i] == '0'));
+        echo "Trivial solution eliminating deduction for y: " . $trivial_y->toString() . " = 0\n";
+        $this->deducer->add(new Equation($trivial_y, 0));
 
         // determine sums
         for ($s = 0; $s < $productlen - 1; $s++) {
@@ -61,7 +82,7 @@ class Factorizer {
             echo 'Product sum ' . $i . ": {$products[$i]} = " . $product_sum->toString() . " mod 2\n";
 
             // apply deductions before mod/div
-            $product_sum->apply_deductions($this->deductions);
+            $product_sum->apply_deductions($this->deducer->deductions);
             echo 'Product equation ' . $i . ": {$products[$i]} = " . $product_sum->toString() . " mod 2\n";
 
             // remove duplicate expressions when applicable
@@ -71,28 +92,6 @@ class Factorizer {
             // deduce from the product expression
             $this->deduce($products[$i], $product_sum);
         }
-
-        // now eliminate y = 1 condition
-        if (is_a($this->deductions[0][1], 'Variable')) $trivial_y = new BinaryExpression(array(new Term(array(new Boolean($this->deductions[0][1], true)))));
-        elseif (is_a($this->deductions[0][1], 'Boolean')) $trivial_y = new BinaryExpression(array(new Term(array($this->deductions[0][1]->negate()))));
-        else $trivial_y = $this->deductions[0][1]->negate();
-        echo "Starting trivial y eliminating deduction with " . $trivial_y->toString() . "\n";
-        for ($i = 1; $i < count($this->deductions); $i++) {
-            if (is_a($this->deductions[$i][1], 'Variable')) $expr_y = new BinaryExpression(array(new Term(array(new Boolean($this->deductions[$i][1], true)))));
-            elseif (is_a($this->deductions[$i][1], 'Boolean')) $expr_y = new BinaryExpression(array(new Term(array($this->deductions[$i][1]->negate()))));
-            else $expr_y = $this->deductions[$i][1]->negate();
-            echo "Combining trivial y eliminating deduction with " . $expr_y->toString() . "\n";
-            $trivial_y = $trivial_y->and_expr($expr_y);
-        }
-        echo "Trivial solution eliminating deduction for y: " . $trivial_y->toString() . " = 0\n";
-        if (count($trivial_y->terms) > 1) throw new Exception('Trivial y eliminating solution has more than a single term');
-        $this->deductions[] = array($trivial_y->terms[0], 0);
-
-        // setup initial deduction to avoid trivial solution x = 1 - x1'x2'...xn' = 0
-        $trivial_x = new Term();
-        for ($i = 1; $i < $numlen; $i++) $trivial_x->add(new Boolean(new Variable('x', $i), true));
-        echo "Trivial solution eliminating deduction for x: " . $trivial_x->toString() . " = 0\n";
-        $this->deductions[] = array($trivial_x, 0);
 
         // now calculate the zero products based on x
         for ($i = $numlen; $i < $productlen; $i++) {
@@ -105,7 +104,7 @@ class Factorizer {
             echo 'Product sum ' . $i . ": {$products[$i]} = " . $product_sum->toString() . " mod 2\n";
 
             // apply deductions before mod/div
-            $product_sum->apply_deductions($this->deductions);
+            $product_sum->apply_deductions($this->deducer->deductions);
             echo 'Product equation ' . $i . ": {$products[$i]} = " . $product_sum->toString() . " mod 2\n";
 
             // remove duplicate expressions when applicable
@@ -116,13 +115,49 @@ class Factorizer {
             $this->deduce($products[$i], $product_sum);
         }
 
-        // TODO: add the balance eliminating equation (x < y)
+        // print deductions
+        echo "Deductions: " . $this->deducer->toString() . "\n";
+        echo "\n\n Stage 4\n\n";
+
+        // add the balance eliminating equations (x >= y - e.g. x'y = 0)
+        for ($i = 0; $i < $numlen - 1; $i++) {
+
+            // calculate xn'yn
+            $balance_expr = new BinaryExpression(array(new Term(array(new Boolean(new Variable(x, $numlen - 1 - $i), true), new Boolean(new Variable(y, $numlen - 1 - $i))))));
+            echo "Balance expression $i before deductions: " . $balance_expr->toString() . "\n";
+
+            // apply deductions
+            $balance_expr->apply_deductions($this->deducer->deductions);
+            echo "Balance expression $i after deductions: " . $balance_expr->toString() . "\n";
+
+            // add the equal conditions of previous digits
+            if ($i > 0) $balance_expr = $balance_expr->and_expr($equal_expr);
+            echo "Balance expression $i after deductions and previous equal digits: " . $balance_expr->toString() . "\n";
+
+            // do the deductions from new equation
+            $this->deduce(0, new Sum(array($balance_expr)));
+
+            // calculate equal condition of the digits (xnyn V xn'yn')
+            $digit_equal_expr = new BinaryExpression(array(
+                new Term(array(new Boolean(new Variable(x, $numlen - 1 - $i)), new Boolean(new Variable(y, $numlen - 1 - $i)))),
+                new Term(array(new Boolean(new Variable(x, $numlen - 1 - $i), true), new Boolean(new Variable(y, $numlen - 1 - $i), true)))
+            ));
+
+            // apply deductins for the digit equal condition
+            $digit_equal_expr->apply_deductions($this->deducer->deductions);
+
+            // multiply with previous digit conditions as needed
+            if ($i == 0) $equal_expr = $digit_equal_expr; else $equal_expr = $equal_expr->and_expr($digit_equal_expr);
+        }
 
         // print deductions
-        $this->print_deductions($this->deductions);
+        echo "Deductions: " . $this->deducer->toString() . "\n";
 
-        // now do random assignments to find the solution
-        $solution = $this->find_solution($this->deductions);
+        // check if the deductions give a complete solution - if so, return it
+        $solution = $this->deducer->get_solution();
+
+        // if there is no solution, start to do random assignments to find the solution
+        if (!$solution) throw new Exception('No solution found: ' . $this->deducer->toString());
 
         // convert solution to decimal
         $solution[0] = $this->binary_to_decimal($solution[0] . '1');
@@ -161,12 +196,7 @@ class Factorizer {
         echo $reduction_var->toString() . " = 0 reduction did not work - trying 1\n";
 
         // zero branch did not work - try to find solution in the one branch of that variable
-        $branch_solution = $this->find_branch_solution($deductions, $reduction_var, 1);
-        if ($branch_solution) return $branch_solution;
-
-        // could not find a solution in either? error out
-        $this->print_deductions($deductions);
-        throw new Exception('Cannot find a solution');
+        return $this->find_branch_solution($deductions, $reduction_var, 1);
     }
 
     /*
@@ -263,9 +293,9 @@ class Factorizer {
         if ($this->binary_one($branch_solution[0])) { echo "Trivial solution\n"; return false; }
         if ($this->binary_one($branch_solution[1])) { echo "Trivial solution\n"; return false; }
 
-        // ignore solutions where x > y
+        // ignore solutions where x < y
         $comparison_status = $this->compare_binary($branch_solution[0], $branch_solution[1]);
-        if ($comparison_status < 0) { echo "X > Y solution\n"; return false; }
+        if ($comparison_status > 0) { echo "X < Y solution\n"; return false; }
 
         // this seems to be the solution we want - return it
         // debug: print_r($branch_solution);
@@ -310,46 +340,6 @@ class Factorizer {
 
         // it's one
         return true;
-    }
-
-    /*
-     * get the solution from trivial deductions (when possible)
-     */
-    protected function get_branch_solution($deductions) {
-
-        // debug: echo "Checking if branch solution is complete\n";
-
-        // get rid of totalities first
-        $this->prune_totalities($deductions);
-
-        // extracted x and y digits
-        $x = array();
-        $y = array();
-
-        // loop through the deductions
-        foreach ($deductions as $deduction) {
-
-            // if the deduction is not of var=value type, we can't deduce a solution
-            if (!is_a($deduction[0], 'Variable')) {
-                // debug: echo "Not a variable!\n"; print_r($deduction[0]);
-                return false;
-            }
-            if (is_object($deduction[1])) {
-                // debug: echo "Object!\n"; print_r($deduction[0]); print_r($deduction[1]);
-                return false;
-            }
-
-            // get the x/y value
-            if ($deduction[0]->type == x) $x[intval($deduction[0]->digit)] = $deduction[1];
-            else $y[intval($deduction[0]->digit)] = $deduction[1];
-        }
-
-        // sort the arrays to put them in right order
-        ksort($x);
-        ksort($y);
-
-        // looks like all deductions are var=value type - return the solution
-        return array(strrev(implode('', $x)), strrev(implode('', $y)));
     }
 
     /*
@@ -431,8 +421,104 @@ class Factorizer {
     }
 
     /*
-     * deductions from an equation with 1 variable
+     * deductions from an equation with more than 2 variables
     */
+    protected function deduce_general($val, Sum $product_sum) {
+
+        echo "Deducing from " . $product_sum->toString() . " = " . $val . "\n";
+
+        // determine the deduction expression
+        $deduce_expr = $product_sum->determine_deduction_expr();
+        echo "Determined deduction expression index as: " . $deduce_expr . "\n";
+
+        // if we could find a deduction expression, use it - we like deductions of the form var = expr better
+        if ($deduce_expr != -1) {
+
+            // get the variable from the sum expression
+            $deduce_var = $product_sum->exprs[$deduce_expr]->terms[0]->vars[0]->copy();
+            echo "Determined deduction variable as: " . $deduce_var->toString() . "\n";
+
+            // get the sum without the deduction variable
+            $deduce_sum = $product_sum->remove_expr($deduce_expr);
+            echo "Determined deduction sum as: " . $deduce_sum->toString() . "\n";
+
+            // take the mod of the sum
+            $deduce_mod = $deduce_sum->mod();
+            echo "Determined deduction mod as: " . $deduce_mod->toString() . "\n";
+
+            // if the variable is negated and value is zero or variable is not negated and value is one, take the negation
+            if (($deduce_var->negated && $val == 0) || (!$deduce_var->negated && $val == 1)) {
+                $deduce_mod = $deduce_mod->negate();
+                echo "Negated deduction mod: " . $deduce_mod->toString() . "\n";
+            }
+
+            // now we just equate the deduction mod to the variable as-is
+            $deduce_var = $deduce_var->var;
+            echo "Deduction variable: " . $deduce_var->toString() . "\n";
+
+            // simplify if the expression is a value
+            if (count($deduce_mod->terms) == 0) $deduce_mod = 0;
+            if (count($deduce_mod->terms) == 1 && count($deduce_mod->terms[0]->vars) == 0) $deduce_mod = $deduce_mod->terms[0]->val;
+
+            // deduce the equation
+            $this->deduction($deduce_var, $deduce_mod);
+        }
+        // could not find a nice deduction of the form var = expr - use zero product deductions
+        else {
+
+            // get the mod of the sum
+            $expr = $product_sum->mod();
+
+            // if the equations are not the same, we have to deduce combined - first, convert to zero if needed
+            if ($val == '1') {
+                $expr = $expr->negate();
+                $expr->simplify()->unify()->merge_terms();
+                echo "Negated expression to find zero products: 0 = " . $expr->toString() . "\n";
+            }
+
+            // each product in the expression must equal to zero
+            echo "Deducing zero products: " . $expr->toString() . " = 0\n";
+            for ($i = 0; $i < count($expr->terms); $i++) $this->deduction($expr->terms[$i], 0);
+        }
+    }
+
+    /*
+     * saves a simple deduction in the main array
+    */
+    protected function deduction($var, $val) {
+
+        // add the new deduction to the set of deductions we have
+        $this->deducer->add(new Equation($var, $val));
+    }
+
+    /*
+     * calculates the carry over - carryOver(n) = sum(n-1) + carry_over(n-1) div 2
+    */
+    public function carryOver($i) {
+
+        // carry over starts at the first digit
+        if ($i <= 1) {
+            $this->carryovers[$i] = new Sum();
+            return $this->carryovers[$i];
+        }
+
+        // if the carry over was not calculated before, do it now
+        if (!isset($this->carryovers[$i])) {
+            echo 'Calculating carry over ' . $i . "\n";
+            $this->carryovers[$i] = Sum::merge($this->sums[$i-1], $this->carryovers[$i-1])->div();
+        }
+
+        // do a simplification based on new deductions
+        echo 'Carry over ' . $i . ' (before deductions): ' . $this->carryovers[$i]->toString() . "\n";
+        $this->carryovers[$i]->apply_deductions($this->deducer->deductions);
+        $this->carryovers[$i]->simplify()->unify()->merge_terms();
+        echo 'Carry over ' . $i . ' (after deductions): ' . $this->carryovers[$i]->toString() . "\n";
+        return $this->carryovers[$i];
+    }
+
+    /*
+     * deductions from an equation with 1 variable
+    *
     protected function deduce1($val, $expr, $var) {
 
         // apply variable combinations and get the results
@@ -454,10 +540,11 @@ class Factorizer {
         // should not be reaching this point unless we forgot something
         throw new Exception('Deductions1 unreachable point');
     }
+    */
 
     /*
      * deductions from an equation with more than 2 variables
-    */
+    *
     protected function deduce_general_alt1($val, BinaryExpression $expr, $vars) {
 
         // if the value is one, negate the expression to be able to apply the formula
@@ -555,68 +642,11 @@ class Factorizer {
             $this->deduction($deduce_var, $expr_b);
         }
     }
-
-    /*
-     * deductions from an equation with more than 2 variables
     */
-    protected function deduce_general($val, Sum $product_sum) {
-
-        echo "Deducing from " . $product_sum->toString() . " = " . $val . "\n";
-
-        // determine the deduction expression
-        $deduce_expr = $product_sum->determine_deduction_expr();
-        echo "Determined deduction expression index as: " . $deduce_expr . "\n";
-
-        // if we could find a deduction expression, use it - we like deductions of the form var = expr better
-        if ($deduce_expr != -1) {
-
-            // get the variable from the sum expression
-            $deduce_var = $product_sum->exprs[$deduce_expr]->terms[0]->vars[0]->copy();
-            echo "Determined deduction variable as: " . $deduce_var->toString() . "\n";
-
-            // get the sum without the deduction variable
-            $deduce_sum = $product_sum->remove_expr($deduce_expr);
-            echo "Determined deduction sum as: " . $deduce_sum->toString() . "\n";
-
-            // take the mod of the sum
-            $deduce_mod = $deduce_sum->mod();
-            echo "Determined deduction mod as: " . $deduce_mod->toString() . "\n";
-
-            // if the variable is negated and value is zero or variable is not negated and value is one, take the negation
-            if (($deduce_var->negated && $val == 0) || (!$deduce_var->negated && $val == 1)) {
-                $deduce_mod = $deduce_mod->negate();
-                echo "Negated deduction mod: " . $deduce_mod->toString() . "\n";
-            }
-
-            // now we just equate the deduction mod to the variable as-is
-            $deduce_var = $deduce_var->var;
-            echo "Deduction variable: " . $deduce_var->toString() . "\n";
-
-            // deduce the equation
-            $this->deduction($deduce_var, $deduce_mod);
-        }
-        // could not find a nice deduction of the form var = expr - use zero product deductions
-        else {
-
-            // get the mod of the sum
-            $expr = $product_sum->mod();
-
-            // if the equations are not the same, we have to deduce combined - first, convert to zero if needed
-            if ($val == '1') {
-                $expr = $expr->negate();
-                $expr->simplify()->unify()->merge_terms();
-                echo "Negated expression to find zero products: 0 = " . $expr->toString() . "\n";
-            }
-
-            // each product in the expression must equal to zero
-            echo "Deducing zero products: 0 = " . $expr->toString() . "\n";
-            for ($i = 0; $i < count($expr->terms); $i++) $this->deduction($expr->terms[$i], 0);
-        }
-    }
 
     /*
      * deductions from an equation with 2 variables
-    */
+    *
     protected function deduce2($val, $expr, $vars) {
 
         // pick y variables over x
@@ -661,122 +691,57 @@ class Factorizer {
         // should not be reaching this point unless we forgot something
         throw new Exception('Deductions unreachable point');
     }
-
-    /*
-     * saves a simple deduction in the main array
     */
-    protected function deduction($var, $val) {
-
-        // add the new deduction to the set of deductions we have
-        $this->merge_deduction($var, $val, $this->deductions);
-    }
-
-    /*
-     * add a new deduction and reduce existing ones
-     */
-    protected function merge_deduction($var, $val, &$deductions) {
-
-        // if the variable is a single term with a single variable, use the variable itself
-        if (is_object($var) && is_a($var, 'Term') && count($var->vars) == 1) $var = $var->vars[0];
-
-        // if the variable is a boolean object, convert it to variable
-        if (is_object($var) && is_a($var, 'Boolean')) {
-
-            // debug:
-            echo "converting " . $var->toString() . " boolean to variable \n";
-
-            // negate if needed
-            if ($var->negated) {
-                if (!is_object($val)) {
-                    echo "converting " . $var->toString() . " boolean to variable - value: $val \n";
-                    if ($val == '1') $val = 0; else $val = 1;
-                }
-                elseif (method_exists($val, 'negate')) {
-                    $val = $val->negate();
-                    if (method_exists($val, 'simplify')) $val->simplify()->unify()->merge_terms();
-                }
-                else throw new Exception('Unknown condition in deduction: ' . print_r($val, true));
-            }
-
-            // use the variable directly
-            $var = $var->var;
-        }
-
-        // if the value is a simple expression with a single variable, just set them as equal
-        if (is_object($val) && is_a($val, 'BinaryExpression') && count($val->terms) == 1 && count($val->terms[0]->vars) == 1) $val = $val->terms[0]->vars[0];
-
-        echo 'Adding deduction: ' . $var->toString() . ' = ' . (method_exists($val, 'toString') ? $val->toString() : $val) . "\n";
-
-        // apply the new deduction to the previous deductions and simplify them as much as possible
-        $this->reduce_deductions($var, $val, $deductions);
-        $this->prune_totalities($deductions);
-
-        // add the new deduction to the set of deductions
-        $deductions[] = array($var, $val);
-
-        // now do self deduction until there is no more to deduce
-        $this->self_deductions($deductions);
-        $this->print_deductions($deductions);
-    }
-
-    /*
-     * do self deduction - apply each deduction to the other deduction until deductions cannot get reduced anymore
-     */
-    protected function self_deductions(&$deductions) {
-
-        // we have to have at least 2 deductions to be able to start self deductions
-        if (count($deductions) < 2) return;
-
-        // make a copy of the deductions and do a self deduction
-        $deductions_original = $deductions;
-        $deductions_new = $this->self_deduction($deductions_original);
-
-        // debug: echo "Original Deductions: " . $this->print_deductions($deductions_original) . "\n";
-        // debug: echo "New Deductions: " . $this->print_deductions($deductions_new) . "\n";
-
-        // do self deduction until the deductions do not change
-        while (!$this->deductions_equal($deductions_original, $deductions_new)) {
-            $deductions_original = $deductions_new;
-            $deductions_new = $this->self_deduction($deductions_original);
-            // debug: echo "Original Deductions: " . $this->print_deductions($deductions_original) . "\n";
-            // debug: echo "New Deductions: " . $this->print_deductions($deductions_new) . "\n";
-        }
-
-        // now set the new set of deductions
-        $deductions = $deductions_new;
-    }
 
     /*
      * compares 2 deduction sets and returns if they are the same or not
-     */
+     *
     protected function deductions_equal($deductions1, $deductions2) {
 
+        // debug:
+        echo "Comparing deduction sets\n";
+        // debug: echo "Comparing deduction sets - deductions set 1\n"; $this->print_deductions($deductions1);
+        // debug: echo "Comparing deduction sets - deductions set 2\n"; $this->print_deductions($deductions2);
+
         // if the number of deductions differ, they are different
-        if (count($deductions1) != count($deductions2)) return false;
+        if (count($deductions1) != count($deductions2)) {
+            // debug:
+            echo "Deductions are different - counts\n";
+            return false;
+        }
 
         // loop through the deductions and check if they appear in the other set
         foreach ($deductions1 as $deduction1) {
 
+            // debug: echo "Searching for deduction " . $this->print_deduction($deduction1) . " in the second set\n";
+
             // check if the deduction appears in the other set
             $deduction_exists = false;
             foreach ($deductions2 as $deduction2) {
+
+                // debug: echo "Comparing to deduction " . $this->print_deduction($deduction2) . "\n";
                 if ($this->deduction_equal($deduction1, $deduction2)) {
+                    // debug: echo "Deductions equal - found\n";
                     $deduction_exists = true;
                     break;
                 }
             }
 
             // if the deduction does not exist, they cannot be the same
-            if (!$deduction_exists) return false;
+            if (!$deduction_exists) {
+                echo "Deduction " . $this->print_deduction($deduction1) . " does not appear in the second set - different\n";
+                return false;
+            }
         }
 
         // all deductions exist and their count is the same - sets are identical
         return true;
     }
+    */
 
     /*
      * compares 2 deductions and returns if they are the same or not
-     */
+     *
     protected function deduction_equal($deduction1, $deduction2) {
 
         // check both sides of the deductions to see if they are equal or not
@@ -803,729 +768,6 @@ class Factorizer {
         // debug: echo "Deductions different (right hand side object): " . $this->print_deduction($deduction1) . ' vs ' . $this->print_deduction($deduction2) . "\n";
         return false;
     }
-
-    /*
-     * do self deduction - apply each deduction to the other deduction until deductions
-     */
-    protected function self_deduction($deductions_original) {
-
-        // debug: echo "Executing self deduction\n";
-
-        // make a copy of the original deductions
-        $deductions_new = $this->clone_deductions($deductions_original);
-
-        // loop through the deductions
-        for ($i = 0; $i < count($deductions_original); $i++) {
-
-            // get the deduction we have and remove it from the rest of the deductions
-            $deduction_var = $deductions_original[$i][0];
-            $deduction_val = $deductions_original[$i][1];
-
-            // now reduce the other deductions from this deduction - except itself
-            for ($j = 0; $j < count($deductions_new); $j++)
-                if ($i != $j) $this->reduce_deduction($deduction_var, $deduction_val, $deductions_new[$j]);
-
-            // get rid of totalities
-            $this->prune_totalities($deductions);
-        }
-
-        // return the new set of deductions
-        return $deductions_new;
-    }
-
-    /*
-     * gets rid of totalities
-     */
-    protected function prune_totalities(&$deductions) {
-
-        // check the totalities and conflicts
-        $totalities = array();
-        for ($i = 0; $i < count($deductions); $i++) {
-
-            // convert zero terms
-            if (is_object($deductions[$i][0]) && is_a($deductions[$i][0], 'Term') && count($deductions[$i][0]->vars) == 0)
-                $deductions[$i][0] = (!$deductions[$i][0]->val ? 0 : 1);
-
-            // totalities and conflicts have values on both sides
-            if (!is_object($deductions[$i][0]) && !is_object($deductions[$i][1])) {
-
-                // if both sides equal to each other, it's a totality - otherwise it's a conflict
-                if ($deductions[$i][0] == $deductions[$i][1]) $totalities[] = $i;
-                else throw new Exception('Conflict in deduction ' . $i);
-            }
-        }
-
-        // now get rid of totalities in the array
-        if ($totalities) {
-            foreach ($totalities as $totality) unset($deductions[$totality]);
-            $deductions = array_values($deductions);
-        }
-    }
-
-    /*
-     * prints a deduction
-     */
-    protected function print_deduction($deduction) {
-        if (!method_exists($deduction[0], 'toString')) { echo 'invalid deduction: '; print_r($deduction[0]); exit; }
-        return $deduction[0]->toString() . ' = ' . (method_exists($deduction[1], 'toString') ? $deduction[1]->toString() : $deduction[1]);
-    }
-
-    /*
-     * reduce deductions with a new deduction - executed right before a new deduction is added
-     */
-    protected function reduce_deductions(&$var, &$val, &$deductions) {
-
-        for ($i = 0; $i < count($deductions); $i++) {
-
-            // some reductions generate more deductions while invalidating their own - e.g. we previously had a zero product deduction and now one of the variables resolve into an expression
-            // that will likely generate more zero product deductions while removing its own deduction
-            $new_deductions = $this->reduce_deduction($var, $val, $deductions[$i]);
-            if ($new_deductions) {
-                foreach ($new_deductions as $new_deduction) $deductions[] = $new_deduction;
-                $this->deductions[$i] = array(0,0); // make it a totality - we'll prune it later
-            }
-        }
-    }
-
-    /*
-     * reduce a single deduction from a new deduction when possible
-     */
-    protected function reduce_deduction(&$var, &$val, &$deduction) {
-
-        // debug: echo "Applying new deduction " . $this->print_deduction(array($var, $val)) . " to previous deduction: " . $this->print_deduction($deduction) . "\n";
-
-        // variable reductions - direct replacements
-        if (is_a($var, 'Variable')) return $this->reduce_deduction_from_var($var, $val, $deduction);
-        // term reductions - zero products
-        elseif (is_a($var, 'Term')) return $this->reduce_deduction_from_zero_product($var, $val, $deduction);
-        // if we get a deduction that is something other than term or direct variable, something's wrong - error out
-        else throw new Exception('Unknown deduction variable: ' . print_r($var, true));
-
-        // debug: echo "Deduction after " . $this->print_deduction(array($var, $val)) . " application: " . $this->print_deduction($deduction) . "\n";
-    }
-
-    /*
-     * reduce a single deduction from a new var = something deduction
-     */
-    protected function reduce_deduction_from_var(Variable $var, $val, &$deduction) {
-
-        // single variable = binary expression
-        if (is_object($val) && is_a($val, 'BinaryExpression')) return $this->reduce_deduction_from_var_expr($var, $val, $deduction);
-        // single variable = boolean variable
-        elseif (is_object($val) && is_a($val, 'Boolean')) return $this->reduce_deduction_from_var_bool($var, $val, $deduction);
-        // single variable = another variable
-        elseif (is_object($val) && is_a($val, 'Variable')) return $this->reduce_deduction_from_var_var($var, $val, $deduction);
-        // single variable = value
-        elseif (!is_object($val)) return $this->reduce_deduction_from_var_value($var, $val, $deduction);
-        // otherwise unknown deduction
-        else throw new Exception('Unknown single variable deduction: ' . print_r($val, true));
-    }
-
-    /*
-     * reduce a single deduction from a new variable deduction that equals a binary expression
     */
-    protected function reduce_deduction_from_var_expr(Variable $var, BinaryExpression $val, &$deduction) {
-
-        // deduction is a zero product type deduction
-        if (is_object($deduction[0]) && is_a($deduction[0], 'Term'))
-            return $this->reduce_zero_product_deduction_from_var_expr($var, $val, $deduction);
-        // deduction is a variable = binary expression type deduction
-        elseif (is_object($deduction[0]) && is_a($deduction[0], 'Variable') && is_object($deduction[1]) && is_a($deduction[1], 'BinaryExpression'))
-            $deduction[1] = $this->reduce_var_expr_deduction_from_var_expr($var, $val, $deduction[1]);
-        // deduction is a variable = boolean type deduction
-        elseif (is_object($deduction[0]) && is_a($deduction[0], 'Variable') && is_object($deduction[1]) && is_a($deduction[1], 'Boolean'))
-            $deduction[1] = $this->reduce_var_bool_deduction_from_var_expr($var, $val, $deduction[1]);
-        // deduction is a variable = another variable type deduction
-        elseif (is_object($deduction[0]) && is_a($deduction[0], 'Variable') && is_object($deduction[1]) && is_a($deduction[1], 'Variable'))
-            $deduction[1] = $this->reduce_var_var_deduction_from_var_expr($var, $val, $deduction[1]);
-        // deduction is a variable = constant value type deduction
-        elseif (is_object($deduction[0]) && is_a($deduction[0], 'Variable') && !is_object($deduction[1]))
-            $deduction[1] = $this->reduce_var_value_deduction_from_var_expr($var, $val, $deduction[1]);
-        // unknown deduction type
-        else throw new Exception('Unknown deduction type: ' . print_r($deduction, true));
-
-        // only the term generates new deductions - the rest does not
-        return false;
-    }
-
-    /*
-     * reduce a single variable in a var = constant type deduction from a new var = expr variable type deduction
-    */
-    protected function reduce_var_value_deduction_from_var_expr(Variable $var, BinaryExpression $val, $deduction_val) {
-
-        // nothing to change here
-        return $deduction_val;
-    }
-
-    /*
-     * reduce a single variable in a var = variable type deduction from a new var = expr variable type deduction
-    */
-    protected function reduce_var_var_deduction_from_var_expr(Variable $var, BinaryExpression $val, Variable $deduction_var) {
-
-        // if the variable is the same, return the value
-        if ($deduction_var->toString() == $var->toString()) return $val;
-
-        // if the variable does not appear, return it unchanged
-        return $deduction_var;
-    }
-
-    /*
-     * reduce a single variable in a var = boolean variable type deduction from a new var = expr variable type deduction
-    */
-    protected function reduce_var_bool_deduction_from_var_expr(Variable $var, BinaryExpression $val, Boolean $deduction_bool) {
-
-        // if the variable is the same, return the value
-        if ($deduction_bool->toString() == $var->toString()) return $val;
-
-        // if the variable appears negated, return the negated value
-        if ($deduction_bool->negate()->toString() == $var->toString()) return $val->negate()->simplify()->unify()->merge_terms();
-
-        // if the variable does not appear, return it unchanged
-        return $deduction_bool;
-    }
-
-    /*
-     * reduce a single variable in a var = expr type deduction from a new var = expr variable type deduction
-    */
-    protected function reduce_var_expr_deduction_from_var_expr(Variable $var, BinaryExpression $val, BinaryExpression $expr) {
-
-        // apply the expression within expression
-        $expr->apply_var_expr($var, $val);
-
-        // if the expression turned into a value, return that
-        if (count($expr->terms) == 1 && count($expr->terms[0]->vars) == 0) return $expr->terms[0]->val;
-
-        // if the expression turned into a single variable, convert the deduction as such
-        if (count($expr->terms) == 1 && count($expr->terms[0]->vars) == 1) {
-
-            // if it's not negated, just return the variable itself
-            if (!$expr->terms[0]->vars[0]->negated) return $expr->terms[0]->vars[0]->var;
-            else return $expr->terms[0]->vars[0];
-        }
-
-        // return the simplified expression
-        return $expr;
-    }
-
-    /*
-     * reduce a single variable in a zero product deduction from a new var = expr variable deduction
-    */
-    protected function reduce_zero_product_deduction_from_var_expr(Variable $var, BinaryExpression $val, &$deduction) {
-
-        // this is a zero-product type deduction - get the term
-        $term = $deduction[0];
-
-        // if the term does not contain our variable, nothing to do
-        if (!$term->has_variable($var)) return;
-
-        // essentially we will do 0 = expr * term_without_var and then deduce further and delete the original one - these are the new deductions we will return
-        // when we return new deductions, the original deduction automatically gets deleted
-        $new_deductions = array();
-
-        // if the variable appears in non-negated form, remove the variable and "and" the expression
-        $bool = new Boolean($var);
-        if ($term->has_boolean($bool)) {
-            $new_expr = $val->and_expr(new BinaryExpression(array($term->remove_variable($bool))));
-            foreach ($new_expr->terms as $new_term) $new_deductions[] = array($new_term, 0);
-        }
-        // if the variable appears in negated form, remove the negated variable and "and" the negated expression
-        elseif ($term->has_boolean($bool->negate())) {
-            $new_expr = $val->negate()->and_expr(new BinaryExpression(array($term->remove_variable($bool->negate()))));
-            foreach ($new_expr->terms as $new_term) $new_deductions[] = array($new_term, 0);
-        }
-        else throw new Exception('Should not reach here - found the variable in term but then could not');
-
-        // return the new deductions - this will cause the original deduction to be removed automatically
-        return $new_deductions;
-    }
-
-    /*
-     * reduce a single deduction from a new variable deduction that equals another boolean variable
-    */
-    protected function reduce_deduction_from_var_bool(Variable $var, Boolean $val, &$deduction) {
-
-        // deduction is a zero product type deduction
-        if (is_object($deduction[0]) && is_a($deduction[0], 'Term'))
-            $this->reduce_zero_product_deduction_from_var_bool($var, $val, $deduction);
-        // deduction is a variable = binary expression type deduction
-        elseif (is_object($deduction[0]) && is_a($deduction[0], 'Variable') && is_object($deduction[1]) && is_a($deduction[1], 'BinaryExpression'))
-            $deduction[1] = $this->reduce_var_expr_deduction_from_var_bool($var, $val, $deduction[1]);
-        // deduction is a variable = boolean type deduction
-        elseif (is_object($deduction[0]) && is_a($deduction[0], 'Variable') && is_object($deduction[1]) && is_a($deduction[1], 'Boolean'))
-            $deduction[1] = $this->reduce_var_bool_deduction_from_var_bool($var, $val, $deduction[1]);
-        // deduction is a variable = another variable type deduction
-        elseif (is_object($deduction[0]) && is_a($deduction[0], 'Variable') && is_object($deduction[1]) && is_a($deduction[1], 'Variable'))
-            $deduction[1] = $this->reduce_var_var_deduction_from_var_bool($var, $val, $deduction[1]);
-        // deduction is a variable = constant value type deduction
-        elseif (is_object($deduction[0]) && is_a($deduction[0], 'Variable') && !is_object($deduction[1]))
-            $deduction[1] = $this->reduce_var_value_deduction_from_var_bool($var, $val, $deduction[1]);
-        // unknown deduction type
-        else throw new Exception('Unknown deduction type: ' . print_r($deduction, true));
-
-        // does not generate new deductions
-        return false;
-    }
-
-    /*
-     * reduce a single variable in a var = constant type deduction from a new var = boolean variable type deduction
-    */
-    protected function reduce_var_value_deduction_from_var_bool(Variable $var, Boolean $val, $deduction_val) {
-
-        // nothing to change here
-        return $deduction_val;
-    }
-
-    /*
-     * reduce a single variable in a var = variable type deduction from a new var = boolean variable type deduction
-    */
-    protected function reduce_var_var_deduction_from_var_bool(Variable $var, Boolean $val, Variable $deduction_var) {
-
-        // if the variable is the same, return the value
-        if ($deduction_var->toString() == $var->toString()) return $val;
-
-        // if the variable does not appear, return it unchanged
-        return $deduction_var;
-    }
-
-    /*
-     * reduce a single variable in a var = boolean variable type deduction from a new var = boolean variable type deduction
-    */
-    protected function reduce_var_bool_deduction_from_var_bool(Variable $var, Boolean $val, Boolean $deduction_bool) {
-
-        // if the variable is the same, return the value
-        if ($deduction_bool->toString() == $var->toString()) return $val;
-
-        // if the variable appears negated, return the negated value
-        if ($deduction_bool->negate()->toString() == $var->toString()) return $val->negate();
-
-        // if the variable does not appear, return it unchanged
-        return $deduction_bool;
-    }
-
-    /*
-     * reduce a single variable in a var = expr type deduction from a new var = boolean variable type deduction
-    */
-    protected function reduce_var_expr_deduction_from_var_bool(Variable $var, Boolean $val, BinaryExpression $expr) {
-
-        // apply the variable replacement in the expression
-        $expr->apply_var_replace($var, $val);
-
-        // if the expression turned into a value, return that
-        if (count($expr->terms) == 1 && count($expr->terms[0]->vars) == 0) return $expr->terms[0]->val;
-
-        // if the expression turned into a single variable, convert the deduction as such
-        if (count($expr->terms) == 1 && count($expr->terms[0]->vars) == 1) {
-
-            // if it's not negated, just return the variable itself
-            if (!$expr->terms[0]->vars[0]->negated) return $expr->terms[0]->vars[0]->var;
-            else return $expr->terms[0]->vars[0];
-        }
-
-        // return the simplified expression
-        return $expr;
-    }
-
-    /*
-     * reduce a single variable in a zero product deduction from a new var = boolean variable deduction
-    */
-    protected function reduce_zero_product_deduction_from_var_bool(Variable $var, Boolean $val, &$deduction) {
-
-        // this is a zero-product type deduction - get the term
-        $term = $deduction[0];
-
-        // if the term does not contain our variable, nothing to do
-        if (!$term->has_variable($var)) return;
-
-        // apply the new value in the term
-        $term->apply_var_replace($var, $val);
-
-        // if the term is down to a single variable, convert the deduction to that form
-        if (count($term->vars) == 1) {
-
-            // if the variable is negated, it means it's one - otherwise it's zero
-            if ($term->vars[0]->negated) { $deduction[0] = $term->vars[0]->var; $deduction[1] = 1; return; }
-            else { $deduction[0] = $term->vars[0]->var; $deduction[1] = 0; return; }
-        }
-    }
-
-    /*
-     * reduce a single deduction from a new variable deduction that equals another variable
-    */
-    protected function reduce_deduction_from_var_var(Variable $var, Variable $val, &$deduction) {
-
-        // deduction is a zero product type deduction
-        if (is_object($deduction[0]) && is_a($deduction[0], 'Term'))
-            $this->reduce_zero_product_deduction_from_var_var($var, $val, $deduction);
-        // deduction is a variable = binary expression type deduction
-        elseif (is_object($deduction[0]) && is_a($deduction[0], 'Variable') && is_object($deduction[1]) && is_a($deduction[1], 'BinaryExpression'))
-            $deduction[1] = $this->reduce_var_expr_deduction_from_var_var($var, $val, $deduction[1]);
-        // deduction is a variable = boolean type deduction
-        elseif (is_object($deduction[0]) && is_a($deduction[0], 'Variable') && is_object($deduction[1]) && is_a($deduction[1], 'Boolean'))
-            $deduction[1] = $this->reduce_var_bool_deduction_from_var_var($var, $val, $deduction[1]);
-        // deduction is a variable = another variable type deduction
-        elseif (is_object($deduction[0]) && is_a($deduction[0], 'Variable') && is_object($deduction[1]) && is_a($deduction[1], 'Variable'))
-            $deduction[1] = $this->reduce_var_var_deduction_from_var_var($var, $val, $deduction[1]);
-        // deduction is a variable = constant value type deduction
-        elseif (is_object($deduction[0]) && is_a($deduction[0], 'Variable') && !is_object($deduction[1]))
-            $deduction[1] = $this->reduce_var_value_deduction_from_var_var($var, $val, $deduction[1]);
-        // unknown deduction type
-        else throw new Exception('Unknown deduction type: ' . print_r($deduction, true));
-
-        // does not generate new deductions
-        return false;
-    }
-
-    /*
-     * reduce a single variable in a var = constant type deduction from a new var = variable type deduction
-    */
-    protected function reduce_var_value_deduction_from_var_var(Variable $var, Variable $val, $deduction_val) {
-
-        // nothing to change here
-        return $deduction_val;
-    }
-
-    /*
-     * reduce a single variable in a var = variable type deduction from a new var = var type deduction
-    */
-    protected function reduce_var_var_deduction_from_var_var(Variable $var, Variable $val, Variable $deduction_var) {
-
-        // if the variable is the same, return the value
-        if ($deduction_var->toString() == $var->toString()) return $val;
-
-        // if the variable does not appear, return it unchanged
-        return $deduction_var;
-    }
-
-    /*
-     * reduce a single variable in a var = boolean variable type deduction from a new var = var type deduction
-    */
-    protected function reduce_var_bool_deduction_from_var_var(Variable $var, Variable $val, Boolean $deduction_bool) {
-
-        // if the variable is the same, return the value
-        if ($deduction_bool->toString() == $var->toString()) return $val;
-
-        // if the variable appears negated, return the negated value
-        if ($deduction_bool->negate()->toString() == $var->toString()) {
-            $newval = new Boolean($val);
-            return $newval->negate();
-        }
-
-        // if the variable does not appear, return it unchanged
-        return $deduction_bool;
-    }
-
-    /*
-     * reduce a single variable in a var = expr type deduction from a new var = var type deduction
-    */
-    protected function reduce_var_expr_deduction_from_var_var(Variable $var, Variable $val, BinaryExpression $expr) {
-
-        // apply the variable replacement in the expression
-        $expr->apply_var_replace($var, $val);
-
-        // if the expression turned into a value, return that
-        if (count($expr->terms) == 1 && count($expr->terms[0]->vars) == 0) return $expr->terms[0]->val;
-
-        // if the expression turned into a single variable, convert the deduction as such
-        if (count($expr->terms) == 1 && count($expr->terms[0]->vars) == 1) {
-
-            // if it's not negated, just return the variable itself
-            if (!$expr->terms[0]->vars[0]->negated) return $expr->terms[0]->vars[0]->var;
-            else return $expr->terms[0]->vars[0];
-        }
-
-        // return the simplified expression
-        return $expr;
-    }
-
-    /*
-     * reduce a single variable in a zero product deduction from a new variable deduction that equals a value
-    */
-    protected function reduce_zero_product_deduction_from_var_var(Variable $var, Variable $val, &$deduction) {
-
-        // this is a zero-product type deduction - get the term
-        $term = $deduction[0];
-
-        // if the term does not contain our variable, nothing to do
-        if (!$term->has_variable($var)) return;
-
-        // apply the new value in the term
-        $term->apply_var_replace($var, $val);
-
-        // if the term is down to a single variable, convert the deduction to that form
-        if (count($term->vars) == 1) {
-
-            // if the variable is negated, it means it's one - otherwise it's zero
-            if ($term->vars[0]->negated) { $deduction[0] = $term->vars[0]->var; $deduction[1] = 1; return; }
-            else { $deduction[0] = $term->vars[0]->var; $deduction[1] = 0; return; }
-        }
-    }
-
-    /*
-     * reduce a single deduction from a new var = constant value type deduction
-    */
-    protected function reduce_deduction_from_var_value(Variable $var, $val, &$deduction) {
-
-        // deduction is a zero product type deduction
-        if (is_object($deduction[0]) && is_a($deduction[0], 'Term'))
-            $this->reduce_zero_product_deduction_from_var_value($var, $val, $deduction);
-        // deduction is a variable = binary expression type deduction
-        elseif (is_object($deduction[0]) && is_a($deduction[0], 'Variable') && is_object($deduction[1]) && is_a($deduction[1], 'BinaryExpression'))
-            $deduction[1] = $this->reduce_var_expr_deduction_from_var_value($var, $val, $deduction[1]);
-        // deduction is a variable = boolean type deduction
-        elseif (is_object($deduction[0]) && is_a($deduction[0], 'Variable') && is_object($deduction[1]) && is_a($deduction[1], 'Boolean'))
-            $deduction[1] = $this->reduce_var_bool_deduction_from_var_value($var, $val, $deduction[1]);
-        // deduction is a variable = another variable type deduction
-        elseif (is_object($deduction[0]) && is_a($deduction[0], 'Variable') && is_object($deduction[1]) && is_a($deduction[1], 'Variable'))
-            $deduction[1] = $this->reduce_var_var_deduction_from_var_value($var, $val, $deduction[1]);
-        // deduction is a variable = constant value type deduction
-        elseif (is_object($deduction[0]) && is_a($deduction[0], 'Variable') && !is_object($deduction[1]))
-            $deduction[1] = $this->reduce_var_value_deduction_from_var_value($var, $val, $deduction[1]);
-        // unknown deduction type
-        else throw new Exception('Unknown deduction type: ' . print_r($deduction, true));
-
-        // does not generate new deductions
-        return false;
-    }
-
-    /*
-     * reduce a single variable in a var = constant type deduction from a new var = constant type deduction
-    */
-    protected function reduce_var_value_deduction_from_var_value(Variable $var, $val, $deduction_val) {
-
-        // nothing to change here
-        return $deduction_val;
-    }
-
-    /*
-     * reduce a single variable in a var = variable type deduction from a new var = constant type deduction
-    */
-    protected function reduce_var_var_deduction_from_var_value(Variable $var, $val, Variable $deduction_var) {
-
-        // if the variable is the same, return the value
-        if ($deduction_var->toString() == $var->toString()) return $val;
-
-        // if the variable does not appear, return it unchanged
-        return $deduction_var;
-    }
-
-    /*
-     * reduce a single variable in a var = boolean variable type deduction from a new var = constant type deduction
-    */
-    protected function reduce_var_bool_deduction_from_var_value(Variable $var, $val, Boolean $deduction_bool) {
-
-        // if the variable is the same, return the value
-        if ($deduction_bool->toString() == $var->toString()) return $val;
-
-        // if the variable appears negated, return the negated value
-        if ($deduction_bool->negate()->toString() == $var->toString()) return ($val == '1' ? 0 : 1);
-
-        // if the variable does not appear, return it unchanged
-        return $deduction_bool;
-    }
-
-    /*
-     * reduce a single variable in a var = expr type deduction from a new var = value type deduction
-    */
-    protected function reduce_var_expr_deduction_from_var_value(Variable $var, $val, BinaryExpression $expr) {
-
-        // apply the variable value in the expression
-        $expr->apply_var($var, $val);
-
-        // if the expression turned into a value, return that
-        if (count($expr->terms) == 1 && count($expr->terms[0]->vars) == 0) return $expr->terms[0]->val;
-
-        // if the expression turned into a single variable, convert the deduction as such
-        if (count($expr->terms) == 1 && count($expr->terms[0]->vars) == 1) {
-
-            // if it's not negated, just return the variable itself
-            if (!$expr->terms[0]->vars[0]->negated) return $expr->terms[0]->vars[0]->var;
-            else return $expr->terms[0]->vars[0];
-        }
-
-        // return the simplified expression
-        return $expr;
-    }
-
-    /*
-     * reduce a single variable in a zero product deduction from a new variable deduction that equals a value
-    */
-    protected function reduce_zero_product_deduction_from_var_value(Variable $var, $val, &$deduction) {
-
-        // this is a zero-product type deduction - get the term
-        $term = $deduction[0];
-
-        // if the term does not contain our variable, nothing to do
-        if (!$term->has_variable($var)) {
-            // debug: echo 'Term does not have variable' . "\n";
-            return;
-        }
-
-        // apply the new value in the term
-        $term->apply_var($var, $val);
-
-        // if the term is down to a single variable, convert the deduction to that form
-        if (count($term->vars) == 1) {
-
-            // if the variable is negated, it means it's one - otherwise it's zero
-            if ($term->vars[0]->negated) { $deduction[0] = $term->vars[0]->var; $deduction[1] = 1; return; }
-            else { $deduction[0] = $term->vars[0]->var; $deduction[1] = 0; return; }
-        }
-    }
-
-    /*
-     * reduce a single deduction from a new zero product deduction
-     */
-    protected function reduce_deduction_from_zero_product(Term &$zero_product, &$val, &$deduction) {
-
-        // if the value is not zero, something's wrong
-        if ($val == '1') throw new Exception('Zero product valued at one: ' . $var->toString());
-
-        // deduction is a zero product type deduction
-        if (is_object($deduction[0]) && is_a($deduction[0], 'Term'))
-            $this->reduce_zero_product_deduction_from_zero_product($zero_product, $val, $deduction);
-        // deduction is a variable = binary expression type deduction
-        elseif (is_object($deduction[0]) && is_a($deduction[0], 'Variable') && is_object($deduction[1]) && is_a($deduction[1], 'BinaryExpression'))
-            $deduction[1] = $this->reduce_var_expr_deduction_from_zero_product($zero_product, $deduction[1]);
-        // deduction is a variable = boolean type deduction
-        elseif (is_object($deduction[0]) && is_a($deduction[0], 'Variable') && is_object($deduction[1]) && is_a($deduction[1], 'Boolean'))
-            $deduction[1] = $this->reduce_var_bool_deduction_from_zero_product($zero_product, $deduction[1]);
-        // deduction is a variable = another variable type deduction
-        elseif (is_object($deduction[0]) && is_a($deduction[0], 'Variable') && is_object($deduction[1]) && is_a($deduction[1], 'Variable'))
-            $deduction[1] = $this->reduce_var_var_deduction_from_zero_product($zero_product, $deduction[1]);
-        // deduction is a variable = constant value type deduction
-        elseif (is_object($deduction[0]) && is_a($deduction[0], 'Variable') && !is_object($deduction[1]))
-            $deduction[1] = $this->reduce_var_value_deduction_from_zero_product($zero_product, $deduction[1]);
-        // unknown deduction type
-        else throw new Exception('Unknown deduction type: ' . print_r($deduction, true));
-
-        // none of these generate new deductions
-        return false;
-    }
-
-    /*
-     * reduce a single variable in a var = constant type deduction from a new var = constant type deduction
-    */
-    protected function reduce_var_value_deduction_from_zero_product(Term $zero_product, $deduction_val) {
-
-        // nothing to change here
-        return $deduction_val;
-    }
-
-    /*
-     * reduce a single variable in a var = variable type deduction from a new var = constant type deduction
-    */
-    protected function reduce_var_var_deduction_from_zero_product(Term $zero_product, Variable $deduction_var) {
-
-        // if the zero product has only a single term, it may be applicable - otherwise not
-        if (count($zero_product->vars) != 1) return $deduction_var;
-
-        // if the zero product matches, return zero
-        if ($deduction_var->toString() == $zero_product->vars[0]->toString()) return 0;
-
-        // if the variable does not appear, return it unchanged
-        return $deduction_var;
-    }
-
-    /*
-     * reduce a single variable in a var = boolean variable type deduction from a zero product deduction
-    */
-    protected function reduce_var_bool_deduction_from_zero_product(Term $zero_product, Boolean $deduction_bool) {
-
-        // if the zero product has only a single term, it may be applicable - otherwise not
-        if (count($zero_product->vars) != 1) return $deduction_bool;
-
-        // if the zero product matches, return zero
-        if ($deduction_bool->toString() == $zero_product->vars[0]->toString()) return 0;
-
-        // if the variable appears negated, return 1
-        if ($deduction_bool->negate()->toString() == $zero_product->vars[0]->toString()) return 1;
-
-        // if the variable does not appear, return it unchanged
-        return $deduction_bool;
-    }
-
-    /*
-     * reduce a single variable in a var = expr type deduction from a zero product deduction
-    */
-    protected function reduce_var_expr_deduction_from_zero_product(Term $zero_product, BinaryExpression $expr) {
-
-        // apply the zero product in the expression
-        $expr->apply_zero_product($zero_product);
-
-        // if the expression turned into a nothing, return 0
-        if (count($expr->terms) == 0) return 0;
-
-        // if the expression turned into a value, return that
-        if (count($expr->terms) == 1 && count($expr->terms[0]->vars) == 0) return $expr->terms[0]->val;
-
-        // if the expression turned into a single variable, convert the deduction as such
-        if (count($expr->terms) == 1 && count($expr->terms[0]->vars) == 1) {
-
-            // if it's not negated, just return the variable itself
-            if (!$expr->terms[0]->vars[0]->negated) return $expr->terms[0]->vars[0]->var;
-            else return $expr->terms[0]->vars[0];
-        }
-
-        // return the simplified expression
-        return $expr;
-    }
-
-    /*
-     * reduce a zero product deduction from another zero product deduction
-    */
-    protected function reduce_zero_product_deduction_from_zero_product(&$new_zero_product, &$val, &$deduction) {
-
-        // try to merge the old product into the new one - all the merge cases apply here with only changes in meaning but no calculation changes
-        // Case 1- identical terms - if merge is successful, we should discard the old deduction and use the new one
-        // Case 2- subset term - newer term is a subset of the old one - if merge is successful, we should discard the old deduction and use the new one
-        // e.g. Reduce deductions from cases like x1x2 = 0 and x1x2x3 = 0 => remove x1x2x3 deduction
-        // Case 3- terms with only one variable difference where it appears negated - if the merge is successful, we should discard the old deduction and use the new reduced deduction
-        // e.g. Reduce deductions from cases like x1x2 = 0 and x1x2' = 0 => x1 = 0
-        $old_zero_product = $deduction[0];
-        $term = $new_zero_product->copy();
-        if ($term->merge($old_zero_product)) {
-
-            echo "Term merged from " . $new_zero_product->toString() . " to: " . $term->toString() . " due to zero product " . $old_zero_product->toString() . "\n";
-
-            // convert the existing deduction to a totality to be pruned
-            $deduction[0] = new Term(array());
-            $deduction[1] = 0;
-
-            // if the term is down to a single variable, convert the deduction to that form
-            if (count($term->vars) == 1) {
-
-                // if the variable is negated, it means it's one - otherwise it's zero
-                if ($term->vars[0]->negated) { $new_zero_product = $term->vars[0]->var; $val = 1; return; }
-                else { $new_zero_product = $term->vars[0]->var; $val = 0; return; }
-            }
-            // term is not down to the last variable - update the new term
-            else $new_zero_product = $term;
-        }
-    }
-
-    /*
-     * calculates the carry over - carryOver(n) = sum(n-1) + carry_over(n-1) div 2
-    */
-    public function carryOver($i) {
-
-        // carry over starts at the first digit
-        if ($i <= 1) {
-            $this->carryovers[$i] = new Sum();
-            return $this->carryovers[$i];
-        }
-
-        // if the carry over was not calculated before, do it now
-        if (!isset($this->carryovers[$i])) {
-            echo 'Calculating carry over ' . $i . "\n";
-            $this->carryovers[$i] = Sum::merge($this->sums[$i-1], $this->carryovers[$i-1])->div();
-        }
-
-        // do a simplification based on new deductions
-        echo 'Carry over ' . $i . ': ' . $this->carryovers[$i]->toString() . "\n";
-        $this->carryovers[$i]->apply_deductions($this->deductions);
-        $this->carryovers[$i]->simplify()->unify()->merge_terms();
-        echo 'Carry over ' . $i . ': ' . $this->carryovers[$i]->toString() . "\n";
-        return $this->carryovers[$i];
-    }
 
 }

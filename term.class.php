@@ -105,12 +105,12 @@ class Term {
 	}
 	
 	/* 
-	 * apply a variable value to the term 
+	 * apply a variable value to the term - returns if the term has changed or not
 	 */
 	public function apply_var($var, $val) { 
 
 		// if the term already has a particular value, no need to apply anything 
-		if ($this->val !== null) return; 
+		if ($this->val !== null) return false;
 
 		// debug: echo 'Applying ' . $var->toString() . ' = ' . $val . " to term " . $this->toString() . "\n";
 		
@@ -142,7 +142,7 @@ class Term {
 					
 					// no more processing needed
 					// echo "Applied 0: " . $this->toString() . "\n"; 
-					return; 
+					return true;
 				}
 				
 				// if we're applying value of one, check if we have other variables in the term 
@@ -152,17 +152,21 @@ class Term {
 						// debug: echo 'Term before application: ' . $this->toString() . "\n";
 						unset($this->vars[$i]);
 						$this->vars = array_values($this->vars);
-						// debug: echo "Application result: " . $this->toString() . "\n"; 
+						// debug: echo "Application result: " . $this->toString() . "\n";
+                        return true;
 					} 
 					else { 
 						$this->vars = array(); 
 						$this->val = '1'; 
 						// echo "Applied 1: " . $this->toString() . "\n"; 
-						return; 
+						return true;
 					}
 				}
 			}
 		}
+
+		// variable not found in term - unchanged
+        return false;
 	}
 
 	/* 
@@ -379,18 +383,18 @@ class Term {
 	}
 	
 	/* 
-	 * applies a zero product to the term   
+	 * applies a zero product to the term - returns if the term changed or not as a result of the application
 	 */
 	public function apply_zero_product($zero_product) { 
 
 		// the argument has to be at least 1 variable
-		if (count($zero_product->vars) < 1) return;
+		if (count($zero_product->vars) < 1) return false;
 		
 		// the merged term has to be at least 1 variable
-		if (count($this->vars) < 1) return;
+		if (count($this->vars) < 1) return false;
 		
 		// the argument has to be smaller or equal to this one 
-		if (count($zero_product->vars) > count($this->vars)) return; 
+		if (count($zero_product->vars) > count($this->vars)) return false;
 		
 		// debug: echo 'Checking if zero product ' . $zero_product->toString() . ' can be used to reduce the term: ' . $this->toString() . "\n";
 		
@@ -412,23 +416,24 @@ class Term {
 			// if the variable is not found, nothing to do - zero product is not applicable to us 
 			if (!$var_exists) { 
 				// debug: echo 'Variable not found' . "\n"; 
-				return; 
+				return false;
 			}  
 		}
 		
-		// so, all variables of the zero product appear in this term - it means this term is zero
-		echo "Term is now zero.\n";
+		// so, all variables of the zero product appear in this term - it means this term is now zero - update and return true to indicate that the term has changed
+		echo "Term is now zero as a result of zero product application.\n";
 		$this->val = 0; 
 		$this->terms = array();
+        return true;
 	}
 	
 	/* 
-	 * apply a variable replace to the term 
+	 * apply a variable replace to the term - returns if the term changed or not as a result of the application
 	 */
 	public function apply_var_replace($oldvar, $newvar) { 
 
 		// if the term already has a particular value, no need to apply anything 
-		if ($this->val !== null) return; 
+		if ($this->val !== null) return false;
 
 		// echo 'Applying ' . $var->toString() . ' = ' . $val . " to term " . $this->toString() . "\n";
 		
@@ -439,14 +444,16 @@ class Term {
 		$oldvarstr = $oldvar->toString();
 		
 		// loop through the variables and check if we encounter the variable - replace value if we do 
-		for ($i = 0; $i < count($this->vars); $i++) { 
+        $var_exists = false;
+        for ($i = 0; $i < count($this->vars); $i++) {
 
 			// looks like we found the value as-is - evaluate the term now 
 			if ($this->vars[$i]->toString() == $oldvarstr) { 
 				// echo "Replacing " . $this->vars[$i]->toString() . ' with ' . $apply_value->toString() . "\n"; 
 				$this->vars[$i] = $newvar;
 				// echo "Replaced term: " . $this->toString() . "\n"; 
-				continue;
+                $var_exists = true;
+                continue;
 			}
 			
 			// looks like we found the value negated - evaluate the term now with the negated variable
@@ -454,14 +461,19 @@ class Term {
 				// echo "Replacing " . $this->vars[$i]->toString() . ' with ' . $apply_value->toString() . "\n";
 				$this->vars[$i] = $newvar->negate();
 				// echo "Replaced term: " . $this->toString() . "\n";
+                $var_exists = true;
 				continue;
 			}
 		}
-		
-		// now unify and simplify the term
-		$this->unify(); 
+
+		// if the variable is not found in the term, nothing has changed, nothing to do
+        if (!$var_exists) return false;
+
+		// term has changed as a result of the application - now unify and simplify
+		$this->unify();
 		$this->simplify();
-		
+        $this->sort();
+        return true;
 	}
 
 	/* 
